@@ -1,0 +1,61 @@
+import { describe, expect, it } from "vitest";
+import { normalizeMemo, normalizeMemoList } from "../src/memos/normalize.js";
+
+describe("normalizeMemo", () => {
+  it("从 memos/123 资源名抽出 id", () => {
+    const memo = normalizeMemo({ name: "memos/123", content: "hi" });
+    expect(memo.id).toBe("123");
+    expect(memo.name).toBe("memos/123");
+  });
+
+  it("没有 name 时用 uid/id 兜底并构造资源名", () => {
+    expect(normalizeMemo({ uid: "abc", content: "x" }).id).toBe("abc");
+    expect(normalizeMemo({ id: 7, content: "x" }).name).toBe("memos/7");
+  });
+
+  it("content 缺失时归一化为空字符串", () => {
+    expect(normalizeMemo({ name: "memos/1" }).content).toBe("");
+  });
+
+  it("tags 缺失时归一化为空数组", () => {
+    expect(normalizeMemo({ name: "memos/1" }).tags).toEqual([]);
+  });
+
+  it("state 优先于旧字段 rowStatus", () => {
+    expect(normalizeMemo({ name: "memos/1", state: "ARCHIVED" }).state).toBe("ARCHIVED");
+    expect(normalizeMemo({ name: "memos/1", rowStatus: "NORMAL" }).state).toBe("NORMAL");
+  });
+
+  it("createTime(ISO) 归一化为 ISO 字符串", () => {
+    const memo = normalizeMemo({ name: "memos/1", createTime: "2026-06-04T10:00:00Z" });
+    expect(memo.createdAt).toBe("2026-06-04T10:00:00.000Z");
+  });
+
+  it("秒级时间戳归一化为 ISO 字符串", () => {
+    const memo = normalizeMemo({ name: "memos/1", createdTs: 1717495200 });
+    expect(memo.createdAt).toBe(new Date(1717495200 * 1000).toISOString());
+  });
+
+  it("attachments 作为 resources 的兜底来源", () => {
+    const memo = normalizeMemo({
+      name: "memos/1",
+      attachments: [{ name: "resources/9", filename: "a.png" }],
+    });
+    expect(memo.resources?.[0]?.name).toBe("resources/9");
+  });
+});
+
+describe("normalizeMemoList", () => {
+  it("归一化列表并保留 nextPageToken", () => {
+    const page = normalizeMemoList({
+      memos: [{ name: "memos/1", content: "a" }, { name: "memos/2", content: "b" }],
+      nextPageToken: "tok",
+    });
+    expect(page.memos).toHaveLength(2);
+    expect(page.nextPageToken).toBe("tok");
+  });
+
+  it("memos 缺失时返回空数组", () => {
+    expect(normalizeMemoList({}).memos).toEqual([]);
+  });
+});
