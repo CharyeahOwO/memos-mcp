@@ -1,5 +1,7 @@
 # memos-mcp
 
+**English** | [简体中文](./README.zh-CN.md)
+
 A [Model Context Protocol](https://modelcontextprotocol.io) server for [Memos](https://github.com/usememos/memos) — expose your Memos instance to AI clients as a searchable, safely-writable memory backend.
 
 > **Status:** Early development (`v0.1.0`). The core read/write tools work over both stdio and HTTP. Semantic search, time-based retrieval, and packaging are on the roadmap.
