@@ -31,6 +31,7 @@ pnpm-debug.log*
 # --- 测试 / 覆盖率 ---
 coverage/
 .nyc_output/
+.firecrawl/
 
 # --- 编辑器 / 系统 ---
 .vscode/

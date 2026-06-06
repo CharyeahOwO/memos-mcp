@@ -61,14 +61,16 @@ function toIso(value: string | number | undefined): string | undefined {
 function normalizeCreatedAt(memo: RawMemo): string {
   return (
     toIso(memo.createTime) ??
+    toIso(memo.create_time) ??
     toIso(memo.createdTs) ??
     toIso(memo.displayTime) ??
+    toIso(memo.display_time) ??
     ""
   );
 }
 
 function normalizeUpdatedAt(memo: RawMemo): string | undefined {
-  return toIso(memo.updateTime) ?? toIso(memo.updatedTs);
+  return toIso(memo.updateTime) ?? toIso(memo.update_time) ?? toIso(memo.updatedTs);
 }
 
 function normalizeResource(raw: RawResource): NormalizedResource {
@@ -76,7 +78,8 @@ function normalizeResource(raw: RawResource): NormalizedResource {
     name: raw.name ?? raw.uid ?? "",
     filename: raw.filename,
     type: raw.type,
-    externalLink: raw.externalLink,
+    size: raw.size,
+    externalLink: raw.externalLink ?? raw.external_link,
   };
 }
 
@@ -111,6 +114,6 @@ export function normalizeMemoList(
   const memos = Array.isArray(response.memos) ? response.memos : [];
   return {
     memos: memos.map(normalizeMemo),
-    nextPageToken: response.nextPageToken,
+    nextPageToken: response.nextPageToken ?? response.next_page_token,
   };
 }

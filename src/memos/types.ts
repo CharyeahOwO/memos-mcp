@@ -19,6 +19,7 @@ export interface RawResource {
   type?: string;
   size?: string | number;
   externalLink?: string;
+  external_link?: string;
   [key: string]: unknown;
 }
 
@@ -38,10 +39,13 @@ export interface RawMemo {
   tags?: string[];
   /** 新版本 camelCase；保留 snake_case 兜底 */
   createTime?: string;
+  create_time?: string;
   createdTs?: string | number;
   updateTime?: string;
+  update_time?: string;
   updatedTs?: string | number;
   displayTime?: string;
+  display_time?: string;
   resources?: RawResource[];
   attachments?: RawResource[];
   [key: string]: unknown;
@@ -50,6 +54,7 @@ export interface RawMemo {
 export interface RawListMemosResponse {
   memos?: RawMemo[];
   nextPageToken?: string;
+  next_page_token?: string;
   [key: string]: unknown;
 }
 
@@ -61,6 +66,7 @@ export interface NormalizedResource {
   name: string;
   filename?: string;
   type?: string;
+  size?: string | number;
   externalLink?: string;
 }
 

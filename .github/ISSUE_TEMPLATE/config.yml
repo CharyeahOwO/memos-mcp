@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://github.com/CharyeahOwO/memos-mcp#readme
+    about: Check README and docs before opening an issue.

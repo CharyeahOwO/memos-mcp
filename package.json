@@ -1,7 +1,7 @@
 {
   "name": "memos-mcp",
   "version": "0.1.0",
-  "description": "Model Context Protocol server for usememos/Memos with safe write tools and per-request auth.",
+  "description": "Local-first Model Context Protocol server for usememos/Memos with safe write tools and local retrieval.",
   "type": "module",
   "license": "MIT",
   "author": "CharyeahOwO",
@@ -18,8 +18,11 @@
   },
   "files": [
     "dist",
+    "docs",
+    "examples",
     ".env.example",
     "README.md",
+    "CONTRIBUTING.md",
     "LICENSE"
   ],
   "scripts": {
@@ -27,8 +30,13 @@
     "dev:http": "cross-env MEMOS_MCP_TRANSPORT=http tsx src/index.ts",
     "build": "tsup",
     "start": "node dist/index.js",
+    "start:http": "cross-env MEMOS_MCP_TRANSPORT=http node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "verify": "npm run typecheck && npm test && npm run build && npm run validate:examples",
+    "validate:examples": "node scripts/validate-examples.mjs",
+    "smoke:http": "node scripts/smoke-http.mjs",
+    "smoke:memos": "node scripts/smoke-memos-api.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

@@ -1,0 +1,13 @@
+{
+  "servers": {
+    "memos": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["/absolute/path/to/memos-mcp/dist/index.js"],
+      "env": {
+        "MEMOS_BASE_URL": "http://127.0.0.1:5230",
+        "MEMOS_ACCESS_TOKEN": "memos_pat_xxxxxxxx"
+      }
+    }
+  }
+}

@@ -37,9 +37,23 @@ export interface ListMemosParams {
   state?: string;
 }
 
+export interface ListAllMemosParams extends ListMemosParams {
+  /** Safety cap for local aggregation tools. */
+  maxPages?: number;
+}
+
 export interface CreateMemoParams {
   content: string;
   visibility: Visibility;
+}
+
+export interface UpdateMemoParams {
+  name: string;
+  content?: string;
+  visibility?: Visibility;
+  pinned?: boolean;
+  /** Memos state, usually NORMAL or ARCHIVED. */
+  state?: "NORMAL" | "ARCHIVED";
 }
 
 export class MemosClient {
@@ -49,6 +63,10 @@ export class MemosClient {
   constructor(options: MemosClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, "");
     this.token = options.token;
+  }
+
+  private resolveMemoName(name: string): string {
+    return name.includes("/") ? name : `memos/${name}`;
   }
 
   /** 发起请求并解析 JSON，非 2xx 转 MemosApiError */
@@ -107,12 +125,35 @@ export class MemosClient {
     return normalizeMemoList(raw);
   }
 
+  /** 分页拉取多页 memos，供本地聚合类工具使用。 */
+  async listAllMemos(params: ListAllMemosParams = {}): Promise<NormalizedMemoPage> {
+    const pageSize = params.pageSize ?? 100;
+    const maxPages = params.maxPages ?? 20;
+    const memos: NormalizedMemo[] = [];
+    let pageToken = params.pageToken;
+    let nextPageToken: string | undefined;
+
+    for (let page = 0; page < maxPages; page += 1) {
+      const result = await this.listMemos({
+        ...params,
+        pageSize,
+        pageToken,
+      });
+      memos.push(...result.memos);
+      nextPageToken = result.nextPageToken;
+      if (!nextPageToken) break;
+      pageToken = nextPageToken;
+    }
+
+    return { memos, nextPageToken };
+  }
+
   /**
    * 获取单条 memo。
    * @param name 资源名 "memos/123" 或裸 id "123"
    */
   async getMemo(name: string): Promise<NormalizedMemo> {
-    const resourceName = name.includes("/") ? name : `memos/${name}`;
+    const resourceName = this.resolveMemoName(name);
     const raw = await this.request<RawMemo>(`/${resourceName}`, { method: "GET" });
     return normalizeMemo(raw);
   }
@@ -125,6 +166,41 @@ export class MemosClient {
         content: params.content,
         visibility: params.visibility,
       }),
+    });
+    return normalizeMemo(raw);
+  }
+
+  /** 更新 memo。Memos v1 REST 使用 updateMask 查询参数指定字段掩码。 */
+  async updateMemo(params: UpdateMemoParams): Promise<NormalizedMemo> {
+    const resourceName = this.resolveMemoName(params.name);
+    const memo: Record<string, unknown> = { name: resourceName };
+    const updateMask: string[] = [];
+
+    if (params.content !== undefined) {
+      memo.content = params.content;
+      updateMask.push("content");
+    }
+    if (params.visibility !== undefined) {
+      memo.visibility = params.visibility;
+      updateMask.push("visibility");
+    }
+    if (params.pinned !== undefined) {
+      memo.pinned = params.pinned;
+      updateMask.push("pinned");
+    }
+    if (params.state !== undefined) {
+      memo.state = params.state;
+      updateMask.push("state");
+    }
+
+    if (updateMask.length === 0) {
+      throw new MemosApiError("更新 memo 至少需要提供一个待更新字段");
+    }
+
+    const query = new URLSearchParams({ updateMask: updateMask.join(",") });
+    const raw = await this.request<RawMemo>(`/${resourceName}?${query.toString()}`, {
+      method: "PATCH",
+      body: JSON.stringify(memo),
     });
     return normalizeMemo(raw);
   }

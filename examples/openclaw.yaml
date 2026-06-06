@@ -1,0 +1,8 @@
+mcp:
+  servers:
+    memos:
+      url: "http://127.0.0.1:8080/mcp"
+      transport: "streamable-http"
+      connectionTimeoutMs: 10000
+      headers:
+        Authorization: "Bearer memos_pat_xxxxxxxx"

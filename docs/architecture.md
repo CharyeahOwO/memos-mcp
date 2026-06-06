@@ -11,7 +11,7 @@ It supports two local deployment profiles:
 | Profile | Description |
 | --- | --- |
 | Base local retrieval | Lightweight local MCP server that forwards tool calls to the Memos REST API. |
-| Local retrieval + vector | Base local retrieval plus local SQLite cache, FTS, embeddings, and semantic search. |
+| Local retrieval + vector | Base local retrieval plus an optional local JSON vector index and semantic search. SQLite/FTS is a later upgrade path. |
 
 ## Non-Goals
 
@@ -56,13 +56,13 @@ Application Services
   │
   ▼
 Optional Local Storage / Index Layer
-  ├─ SQLite memo cache
-  ├─ SQLite FTS5 index
-  ├─ embedding cache
-  └─ vector search storage
+  ├─ current JSON vector index
+  ├─ embeddings stored in the index file
+  ├─ planned SQLite memo cache
+  └─ planned SQLite FTS5/vector storage
 ```
 
-The storage/index layer only exists in the local vector-enabled profile. The base profile should run without SQLite, embedding libraries, or model downloads.
+The storage/index layer only exists in the local vector-enabled profile. The base profile should run without SQLite, vector database libraries, local embedding runtimes, or model downloads.
 
 ## Deployment Profiles
 
@@ -90,6 +90,8 @@ Primary tools:
 - `memos_get_by_tag`
 - `tags_list`
 - `resources_list`
+- `memos_update` (opt-in)
+- `memos_archive` (opt-in)
 
 ### 2. Local Retrieval + Vector
 
@@ -98,16 +100,17 @@ This profile is explicitly enabled by configuration.
 Characteristics:
 
 - Runs on the user's machine or private host.
-- Maintains local SQLite cache and indexes.
-- Supports FTS keyword search over the local cache.
-- Supports semantic search through local or OpenAI-compatible embedding providers.
-- Stores all index and embedding data locally.
+- Maintains a local JSON vector index at `MEMOS_MCP_INDEX_DB`.
+- Uses an OpenAI-compatible embedding provider in the current implementation.
+- Makes `memos_search` default to semantic search after the semantic profile is enabled and synced.
+- Keeps SQLite cache, FTS5, and in-process local embedding providers as later upgrades.
+- Stores index data locally. Memo content may leave the machine only if the user explicitly configures an external embedding endpoint.
 
 Additional tools:
 
 - `memos_sync_index`
 - `memos_index_status`
-- `memos_semantic_search`
+- semantic mode in `memos_search`
 
 Isolation rule:
 
@@ -152,8 +155,8 @@ Vector-profile tools are enabled only when their dependencies/config are availab
 
 Risky tools should be permission-gated:
 
-- update
-- archive
+- update (implemented behind `MEMOS_MCP_ENABLE_UPDATE_TOOLS`)
+- archive (implemented behind `MEMOS_MCP_ENABLE_UPDATE_TOOLS`)
 - upload resource
 - rename tag
 
@@ -236,7 +239,7 @@ Rules:
 Keyword search should support two sources:
 
 1. Memos native API search/filter in the base local retrieval profile.
-2. Local SQLite FTS5 index in the vector-enabled profile.
+2. Planned local SQLite FTS5 index in the vector-enabled profile.
 
 Local FTS is useful for stable, fast, local search behavior, but it must not be required for basic usage.
 
@@ -244,19 +247,24 @@ Local FTS is useful for stable, fast, local search behavior, but it must not be 
 
 Semantic search is optional and only belongs to the local vector-enabled profile.
 
-Supported provider modes:
+Current provider modes:
 
 ```text
 disabled
-local
 openai-compatible
+```
+
+Planned provider mode:
+
+```text
+local
 ```
 
 #### `disabled`
 
 No embedding dependencies. Basic users can run the server without semantic features.
 
-#### `local`
+#### `local` (planned)
 
 Use a local embedding model.
 
@@ -301,9 +309,19 @@ Tradeoffs:
 
 ### 8. Local Storage / Index Layer
 
-Use SQLite as the local index database for the vector-enabled profile.
+The current vector-enabled profile uses a JSON index file.
 
-Suggested tables:
+Current JSON index:
+
+- Path: `MEMOS_MCP_INDEX_DB`, default `./data/memos-mcp-index.json`.
+- Contents: normalized memos plus embeddings.
+- Sync: explicit `memos_sync_index`.
+- Status: `memos_index_status`.
+- Search: `memos_search` in semantic mode.
+
+SQLite is the planned larger-index backend.
+
+Planned SQLite tables:
 
 ```text
 memos
@@ -343,20 +361,19 @@ MEMOS_MCP_HOST=127.0.0.1
 MEMOS_MCP_PORT=8080
 MEMOS_MCP_TIMEZONE=UTC
 
-MEMOS_MCP_DEFAULT_VISIBILITY=PRIVATE
 MEMOS_MCP_READONLY=false
 MEMOS_MCP_ENABLE_UPDATE_TOOLS=false
 MEMOS_MCP_ENABLE_DELETE_TOOLS=false
 MEMOS_MCP_ENABLE_RESOURCE_TOOLS=false
 
-MEMOS_MCP_INDEX_DB=./data/memos-mcp.sqlite
-MEMOS_MCP_ENABLE_FTS=true
+MEMOS_MCP_INDEX_DB=./data/memos-mcp-index.json
 MEMOS_MCP_ENABLE_SEMANTIC_SEARCH=false
 
 MEMOS_MCP_EMBEDDING_PROVIDER=disabled
 MEMOS_MCP_EMBEDDING_MODEL=
 MEMOS_MCP_EMBEDDING_BASE_URL=
 MEMOS_MCP_EMBEDDING_API_KEY=
+MEMOS_MCP_EMBEDDING_BATCH_SIZE=32
 ```
 
 ## Deployment Architecture
@@ -384,8 +401,8 @@ Default host should be `127.0.0.1` for safety.
 
 Docker should support persistent volume for:
 
-- SQLite index.
-- local embedding model cache.
+- the current JSON semantic index.
+- future SQLite indexes and local embedding model cache.
 - logs if any.
 
 Docker is a packaging option for local/private deployment, not an author-hosted cloud service.
@@ -406,10 +423,10 @@ Default behavior should be conservative:
 - No author-hosted cloud service.
 - No public multi-user gateway.
 - HTTP binds to localhost.
-- Default memo visibility is private.
+- `memos_create` requires explicit `visibility` at tool-call time.
 - Read-only mode exists.
 - Delete tools are disabled by default.
-- Update tools are disabled or explicitly gated.
+- Update/archive tools are explicitly gated and disabled by default.
 - Tokens are never logged.
 - Debug logs should not dump memo content unless explicitly enabled.
 - Vector indexes and embedding cache stay on the user's local filesystem.
@@ -436,20 +453,13 @@ memos-mcp/
 │   │   ├── get.ts
 │   │   ├── create.ts
 │   │   ├── search.ts
-│   │   ├── time-search.ts
-│   │   ├── tag.ts
+│   │   ├── time.ts
+│   │   ├── tags.ts
 │   │   ├── resources.ts
-│   │   ├── semantic-search.ts
-│   │   └── index-status.ts
+│   │   └── semantic.ts
 │   ├── indexer/
-│   │   ├── sqlite.ts
-│   │   ├── sync.ts
-│   │   ├── fts.ts
 │   │   ├── embeddings.ts
-│   │   └── vector-store.ts
-│   └── cli/
-│       ├── sync.ts
-│       └── status.ts
+│   │   └── semantic-index.ts
 ├── docs/
 ├── examples/
 ├── docker/
@@ -472,11 +482,12 @@ Current choice:
 - MCP SDK: `@modelcontextprotocol/sdk`
 - HTTP server: Express for the current implementation
 - Config validation: Zod
-- Database: SQLite via `better-sqlite3` or equivalent when vector indexing is added
+- Current semantic storage: local JSON index
+- Planned database: SQLite via `better-sqlite3` or equivalent for larger local indexes
 - Test runner: Vitest
 - Build: tsup
 - Lint/format: ESLint + Prettier
-- Local embeddings: candidate `@xenova/transformers`
+- Local embeddings: planned candidate `@xenova/transformers`
 - Package distribution: npm
 - Container distribution: Docker / GHCR
 
@@ -491,20 +502,24 @@ docs/transports.md
 docs/tools.md
 docs/semantic-search.md
 docs/docker.md
+docs/deployment.md
 docs/security.md
 docs/memos-api-compatibility.md
+docs/troubleshooting.md
 docs/development.md
 examples/claude-desktop.json
 examples/cursor.json
 examples/vscode.json
 examples/hermes.yaml
+examples/openclaw.yaml
 examples/docker-compose.yaml
+examples/memos-mcp.service
+examples/pm2.config.cjs
 ```
 
 ## Open Questions
 
 - How broad should Memos version compatibility be?
 - Should semantic search use a local embedding provider by default when explicitly enabled, or require provider selection?
-- Should update/archive tools be enabled by config or left for a later release?
 - Whether resource upload belongs in the default tool surface.
 - Whether semantic index should sync automatically by default or only through explicit tool calls.

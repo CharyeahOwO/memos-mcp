@@ -1,0 +1,56 @@
+name: Bug Report
+description: Report a reproducible memos-mcp problem.
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: memos-mcp version or commit
+      placeholder: "v0.1.0 or commit SHA"
+    validations:
+      required: true
+  - type: input
+    id: memos-version
+    attributes:
+      label: Memos version
+      placeholder: "v0.24+ recommended"
+  - type: dropdown
+    id: transport
+    attributes:
+      label: Transport
+      options:
+        - stdio
+        - streamable-http
+        - docker
+        - other
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction Steps
+      description: Include commands and client config shape. Do not paste real tokens.
+      placeholder: |
+        1. Set MEMOS_BASE_URL=...
+        2. Run ...
+        3. Call tool ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Paste redacted stderr output. Remove tokens and memo content.
+      render: text
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation Already Tried
+      placeholder: npm run verify, npm run smoke:http, npm run smoke:memos

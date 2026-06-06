@@ -22,5 +22,7 @@ export interface ToolDefinition {
   inputSchema: z.ZodRawShape;
   /** 是否为写工具：只读模式下不注册 */
   isWrite: boolean;
+  /** 需要显式开启的能力开关；关闭时不注册 */
+  featureFlag?: "enableUpdateTools" | "enableSemanticSearch";
   handler: (args: Record<string, unknown>, extra: RequestExtra) => Promise<ToolResult>;
 }

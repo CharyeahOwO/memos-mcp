@@ -4,6 +4,15 @@ import { createListTool } from "../tools/list.js";
 import { createGetTool } from "../tools/get.js";
 import { createSearchTool } from "../tools/search.js";
 import { createCreateTool } from "../tools/create.js";
+import {
+  createGetDayTool,
+  createGetRangeTool,
+  createOnThisDayTool,
+} from "../tools/time.js";
+import { createGetByTagTool, createTagsListTool } from "../tools/tags.js";
+import { createResourcesListTool } from "../tools/resources.js";
+import { createArchiveTool, createUpdateTool } from "../tools/update.js";
+import { createIndexStatusTool, createSyncIndexTool } from "../tools/semantic.js";
 import { logger } from "../logging/logger.js";
 
 /**
@@ -20,7 +29,17 @@ const TOOL_FACTORIES: ((deps: ToolDeps) => ToolDefinition)[] = [
   createListTool,
   createGetTool,
   createSearchTool,
+  createGetDayTool,
+  createGetRangeTool,
+  createOnThisDayTool,
+  createGetByTagTool,
+  createTagsListTool,
+  createResourcesListTool,
   createCreateTool,
+  createUpdateTool,
+  createArchiveTool,
+  createSyncIndexTool,
+  createIndexStatusTool,
 ];
 
 export function registerTools(server: McpServer, deps: ToolDeps): string[] {
@@ -31,6 +50,10 @@ export function registerTools(server: McpServer, deps: ToolDeps): string[] {
 
     // 权限网关：只读模式跳过写工具
     if (deps.config.readonly && tool.isWrite) {
+      continue;
+    }
+
+    if (tool.featureFlag && !deps.config[tool.featureFlag]) {
       continue;
     }
 

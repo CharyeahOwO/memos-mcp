@@ -1,0 +1,38 @@
+name: Feature Request
+description: Propose a local-first feature or tool.
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user workflow should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Describe the smallest useful behavior.
+    validations:
+      required: true
+  - type: dropdown
+    id: profile
+    attributes:
+      label: Deployment Profile
+      options:
+        - base local retrieval
+        - local retrieval plus vector search
+        - docs or packaging
+        - unsure
+  - type: textarea
+    id: safety
+    attributes:
+      label: Safety and Privacy Notes
+      description: Does this touch tokens, memo content, local indexes, or destructive actions?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered

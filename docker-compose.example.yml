@@ -1,0 +1,31 @@
+services:
+  memos-mcp:
+    build:
+      context: .
+    image: ghcr.io/charyeahowo/memos-mcp:local
+    restart: unless-stopped
+    environment:
+      MEMOS_BASE_URL: ${MEMOS_BASE_URL:-http://host.docker.internal:5230}
+      MEMOS_MCP_TRANSPORT: http
+      MEMOS_MCP_HOST: 0.0.0.0
+      MEMOS_MCP_PORT: 8080
+      MEMOS_MCP_READONLY: ${MEMOS_MCP_READONLY:-false}
+      MEMOS_MCP_ENABLE_UPDATE_TOOLS: ${MEMOS_MCP_ENABLE_UPDATE_TOOLS:-false}
+      MEMOS_MCP_TIMEZONE: ${MEMOS_MCP_TIMEZONE:-UTC}
+      MEMOS_MCP_MEMOS_API_VERSION: ${MEMOS_MCP_MEMOS_API_VERSION:-0.24}
+    ports:
+      - "127.0.0.1:8080:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8080/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

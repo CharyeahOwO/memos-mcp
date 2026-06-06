@@ -15,6 +15,9 @@ export type Transport = (typeof TRANSPORTS)[number];
 export const VISIBILITIES = ["PRIVATE", "PROTECTED", "PUBLIC"] as const;
 export type Visibility = (typeof VISIBILITIES)[number];
 
+export const EMBEDDING_PROVIDERS = ["disabled", "openai-compatible"] as const;
+export type EmbeddingProvider = (typeof EMBEDDING_PROVIDERS)[number];
+
 /** 把 "true"/"false"/"1"/"0" 等字符串解析成布尔值 */
 const booleanFromString = (defaultValue: boolean) =>
   z
@@ -57,15 +60,39 @@ const RawConfigSchema = z.object({
       return port;
     }),
 
-  MEMOS_MCP_DEFAULT_VISIBILITY: z
-    .enum(VISIBILITIES, {
-      errorMap: () => ({
-        message: "MEMOS_MCP_DEFAULT_VISIBILITY 只能是 PRIVATE / PROTECTED / PUBLIC",
-      }),
-    })
-    .default("PRIVATE"),
-
   MEMOS_MCP_READONLY: booleanFromString(false),
+
+  MEMOS_MCP_ENABLE_UPDATE_TOOLS: booleanFromString(false),
+
+  MEMOS_MCP_ENABLE_SEMANTIC_SEARCH: booleanFromString(false),
+
+  MEMOS_MCP_INDEX_DB: z.string().default("./data/memos-mcp-index.json"),
+
+  MEMOS_MCP_EMBEDDING_PROVIDER: z.enum(EMBEDDING_PROVIDERS).default("disabled"),
+
+  MEMOS_MCP_EMBEDDING_BASE_URL: z
+    .string()
+    .optional()
+    .transform((value) => value?.replace(/\/+$/, "")),
+
+  MEMOS_MCP_EMBEDDING_API_KEY: z.string().optional(),
+
+  MEMOS_MCP_EMBEDDING_MODEL: z.string().optional(),
+
+  MEMOS_MCP_EMBEDDING_BATCH_SIZE: z
+    .string()
+    .default("32")
+    .transform((value, ctx) => {
+      const size = Number(value);
+      if (!Number.isInteger(size) || size < 1 || size > 128) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "MEMOS_MCP_EMBEDDING_BATCH_SIZE 必须是 1-128 之间的整数",
+        });
+        return z.NEVER;
+      }
+      return size;
+    }),
 
   MEMOS_MCP_TIMEZONE: z
     .string()
@@ -93,8 +120,15 @@ export interface AppConfig {
   transport: Transport;
   host: string;
   port: number;
-  defaultVisibility: Visibility;
   readonly: boolean;
+  enableUpdateTools: boolean;
+  enableSemanticSearch: boolean;
+  indexDb: string;
+  embeddingProvider: EmbeddingProvider;
+  embeddingBaseUrl: string | undefined;
+  embeddingApiKey: string | undefined;
+  embeddingModel: string | undefined;
+  embeddingBatchSize: number;
   timezone: string;
   memosApiVersion: string | undefined;
 }
@@ -129,14 +163,51 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     );
   }
 
+  if (raw.MEMOS_MCP_ENABLE_SEMANTIC_SEARCH) {
+    if (raw.MEMOS_MCP_EMBEDDING_PROVIDER === "disabled") {
+      throw new ConfigError(
+        "配置校验失败：\n  - 启用语义搜索时 MEMOS_MCP_EMBEDDING_PROVIDER 不能是 disabled。"
+      );
+    }
+    if (!raw.MEMOS_MCP_EMBEDDING_BASE_URL) {
+      throw new ConfigError(
+        "配置校验失败：\n  - 启用语义搜索时必须设置 MEMOS_MCP_EMBEDDING_BASE_URL（OpenAI-compatible embeddings 地址）。"
+      );
+    }
+    try {
+      new URL(raw.MEMOS_MCP_EMBEDDING_BASE_URL);
+    } catch {
+      throw new ConfigError(
+        "配置校验失败：\n  - MEMOS_MCP_EMBEDDING_BASE_URL 必须是合法 URL，例如 http://127.0.0.1:11434/v1。"
+      );
+    }
+    if (!raw.MEMOS_MCP_EMBEDDING_MODEL) {
+      throw new ConfigError(
+        "配置校验失败：\n  - 启用语义搜索时必须设置 MEMOS_MCP_EMBEDDING_MODEL。"
+      );
+    }
+    if (!raw.MEMOS_MCP_INDEX_DB) {
+      throw new ConfigError(
+        "配置校验失败：\n  - 启用语义搜索时必须设置 MEMOS_MCP_INDEX_DB。"
+      );
+    }
+  }
+
   return {
     memosBaseUrl: raw.MEMOS_BASE_URL,
     memosAccessToken: raw.MEMOS_ACCESS_TOKEN,
     transport: raw.MEMOS_MCP_TRANSPORT,
     host: raw.MEMOS_MCP_HOST,
     port: raw.MEMOS_MCP_PORT,
-    defaultVisibility: raw.MEMOS_MCP_DEFAULT_VISIBILITY,
     readonly: raw.MEMOS_MCP_READONLY,
+    enableUpdateTools: raw.MEMOS_MCP_ENABLE_UPDATE_TOOLS,
+    enableSemanticSearch: raw.MEMOS_MCP_ENABLE_SEMANTIC_SEARCH,
+    indexDb: raw.MEMOS_MCP_INDEX_DB,
+    embeddingProvider: raw.MEMOS_MCP_EMBEDDING_PROVIDER,
+    embeddingBaseUrl: raw.MEMOS_MCP_EMBEDDING_BASE_URL,
+    embeddingApiKey: raw.MEMOS_MCP_EMBEDDING_API_KEY,
+    embeddingModel: raw.MEMOS_MCP_EMBEDDING_MODEL,
+    embeddingBatchSize: raw.MEMOS_MCP_EMBEDDING_BATCH_SIZE,
     timezone: raw.MEMOS_MCP_TIMEZONE,
     memosApiVersion: raw.MEMOS_MCP_MEMOS_API_VERSION,
   };

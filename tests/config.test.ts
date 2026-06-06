@@ -46,14 +46,50 @@ describe("loadConfig", () => {
     const cfg = loadConfig({ ...base, MEMOS_MCP_TRANSPORT: "http" });
     expect(cfg.host).toBe("127.0.0.1");
     expect(cfg.port).toBe(8080);
-    expect(cfg.defaultVisibility).toBe("PRIVATE");
     expect(cfg.readonly).toBe(false);
+    expect(cfg.enableUpdateTools).toBe(false);
+    expect(cfg.enableSemanticSearch).toBe(false);
+    expect(cfg.embeddingProvider).toBe("disabled");
     expect(cfg.timezone).toBe("UTC");
   });
 
   it("readonly 字符串解析为布尔", () => {
     const cfg = loadConfig({ ...base, MEMOS_MCP_TRANSPORT: "http", MEMOS_MCP_READONLY: "true" });
     expect(cfg.readonly).toBe(true);
+  });
+
+  it("update 工具开关字符串解析为布尔", () => {
+    const cfg = loadConfig({
+      ...base,
+      MEMOS_MCP_TRANSPORT: "http",
+      MEMOS_MCP_ENABLE_UPDATE_TOOLS: "true",
+    });
+    expect(cfg.enableUpdateTools).toBe(true);
+  });
+
+  it("启用语义搜索时要求 embedding 配置", () => {
+    expect(() =>
+      loadConfig({
+        ...base,
+        MEMOS_MCP_TRANSPORT: "http",
+        MEMOS_MCP_ENABLE_SEMANTIC_SEARCH: "true",
+      })
+    ).toThrow(ConfigError);
+  });
+
+  it("语义搜索配置完整时通过", () => {
+    const cfg = loadConfig({
+      ...base,
+      MEMOS_MCP_TRANSPORT: "http",
+      MEMOS_MCP_ENABLE_SEMANTIC_SEARCH: "true",
+      MEMOS_MCP_EMBEDDING_PROVIDER: "openai-compatible",
+      MEMOS_MCP_EMBEDDING_BASE_URL: "http://127.0.0.1:11434/v1/",
+      MEMOS_MCP_EMBEDDING_MODEL: "nomic-embed-text",
+      MEMOS_MCP_INDEX_DB: "./data/test-index.json",
+    });
+    expect(cfg.enableSemanticSearch).toBe(true);
+    expect(cfg.embeddingBaseUrl).toBe("http://127.0.0.1:11434/v1");
+    expect(cfg.embeddingModel).toBe("nomic-embed-text");
   });
 
   it("非法端口被拒", () => {
