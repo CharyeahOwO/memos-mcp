@@ -4,12 +4,12 @@ memos-mcp is a local-first MCP server for a user's own Memos instance.
 
 ## Boundaries
 
-- No author-hosted cloud service.
-- No public multi-user gateway.
-- No hosted token storage.
-- No hosted vector index.
-- No destructive tools by default.
-- No semantic/vector dependency in the base profile.
+- Base profile keeps no local memo copy.
+- Semantic profile stores vectors at `MEMOS_MCP_INDEX_DB`.
+- Write tools are hidden when `MEMOS_MCP_READONLY=true`.
+- Update/archive tools require `MEMOS_MCP_ENABLE_UPDATE_TOOLS=true`.
+- Delete tools are intentionally not implemented.
+- Semantic/vector dependencies are opt-in.
 
 ## Profiles
 
@@ -22,24 +22,27 @@ SQLite/FTS and in-process local embedding models are planned upgrades, not base 
 
 ## Layers
 
-```text
-MCP client
-  -> stdio or local Streamable HTTP transport
-  -> tool registry / permission gate
-  -> auth resolver
-  -> Memos REST client
-  -> response normalization
-  -> Memos instance
+```mermaid
+flowchart LR
+  Client["MCP client"] -->|stdio or local HTTP| Transport["Transport adapter"]
+  Transport --> Registry["Tool registry"]
+  Registry --> Gate["Permission gate"]
+  Gate --> Auth["Auth resolver"]
+  Auth --> Api["Memos REST client"]
+  Api --> Memos["User-owned Memos API"]
+  Api --> Normalize["Response normalization"]
+  Normalize --> Registry
 ```
 
 Optional semantic profile:
 
-```text
-memos_sync_index
-  -> list Memos pages
-  -> OpenAI-compatible embeddings
-  -> local JSON vector index
-  -> memos_search semantic mode
+```mermaid
+flowchart LR
+  Sync["memos_sync_index"] --> PageRead["Paginated memo reads"]
+  PageRead --> Embedding["OpenAI-compatible embeddings"]
+  Embedding --> Index["Local JSON vector index"]
+  Index --> Search["memos_search semantic mode"]
+  Search --> Result["Ranked memo summaries"]
 ```
 
 ## Tool Registration
@@ -62,7 +65,6 @@ stdio:
 local HTTP:
 
 - Token can come from `Authorization: Bearer <token>` on each request.
-- This is for local/private flexibility, not public multi-tenant hosting.
 
 ## Memos Compatibility
 

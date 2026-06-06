@@ -32,6 +32,8 @@ for (const file of requiredFiles) {
 }
 
 const requiredReadmeSnippets = [
+  "## Architecture",
+  "```mermaid",
   "Claude Desktop",
   "Cursor",
   "VS Code Copilot MCP",
@@ -54,7 +56,10 @@ for (const snippet of requiredReadmeSnippets) {
   }
 }
 
-const forbiddenSecretPattern = /memos_pat_(?!x{4,}\b)[A-Za-z0-9_-]{16,}/;
+const forbiddenSecretPatterns = [
+  /memos_pat_(?!x{4,}\b)[A-Za-z0-9_-]{16,}/,
+  /\bsk-[A-Za-z0-9_-]{20,}\b/,
+];
 const ignoredDirs = new Set([
   ".git",
   ".firecrawl",
@@ -77,8 +82,8 @@ function walk(dir) {
     }
     const rel = relative(root, fullPath).replaceAll("\\", "/");
     const text = readFileSync(fullPath, "utf8");
-    if (forbiddenSecretPattern.test(text)) {
-      throw new Error(`Potential real Memos PAT found in ${rel}`);
+    if (forbiddenSecretPatterns.some((pattern) => pattern.test(text))) {
+      throw new Error(`Potential real secret found in ${rel}`);
     }
   }
 }

@@ -11,7 +11,7 @@ import type { AppConfig } from "../config/index.js";
  * McpServer + transport，处理完即关闭。token 由本地 HTTP 客户端在 Authorization
  * 头自带，服务器不存任何钥匙、不存任何会话状态。
  *
- * 安全：默认绑 127.0.0.1。项目不定位为公网云服务，不要直接绑 0.0.0.0 暴露公网。
+ * 安全：默认绑 127.0.0.1。需要局域网访问时再改成 0.0.0.0。
  */
 export async function startHttp(config: AppConfig): Promise<void> {
   const app = express();
@@ -68,8 +68,7 @@ export async function startHttp(config: AppConfig): Promise<void> {
       );
       if (config.host !== "127.0.0.1" && config.host !== "localhost") {
         logger.warn(
-          `当前绑定到 ${config.host}，可能被本机外访问。项目定位为本地部署，` +
-            "请不要直接暴露公网；如需局域网访问，请自行处理网络边界与凭据安全。"
+          `当前绑定到 ${config.host}，可能被本机外访问；请确认网络边界与凭据处理符合预期。`
         );
       }
       resolve();

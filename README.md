@@ -5,31 +5,111 @@
 [![CI](https://github.com/CharyeahOwO/memos-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/CharyeahOwO/memos-mcp/actions/workflows/ci.yml)
 [![Docker Image](https://github.com/CharyeahOwO/memos-mcp/actions/workflows/docker-image.yml/badge.svg)](https://github.com/CharyeahOwO/memos-mcp/actions/workflows/docker-image.yml)
 
-Local-first [Model Context Protocol](https://modelcontextprotocol.io) server for [Memos](https://github.com/usememos/memos). It exposes your own Memos instance to local AI clients as a searchable, safely writable memory backend.
+MCP server for [Memos](https://github.com/usememos/memos). It lets AI clients read, search, and write to a Memos instance through the Model Context Protocol.
 
-No author-hosted cloud service. No public multi-user gateway. Tokens and indexes stay in your local/private environment.
+Use it when you want an AI agent to:
 
-## Supported
+- Search your memos by keyword, date, tag, or semantic similarity.
+- Retrieve recent notes or a specific memo by id.
+- Create a new memo with explicit `PRIVATE`, `PROTECTED`, or `PUBLIC` visibility.
+- Optionally update or archive memos when write tools are enabled.
 
-Clients and runtimes:
+## Scope
 
-| Client / runtime | Transport | Status |
-| --- | --- | --- |
-| Claude Desktop | stdio | supported |
-| Cursor | stdio | supported |
-| VS Code Copilot MCP | stdio | supported |
-| Codex CLI | stdio | supported |
-| Hermes Agent | Streamable HTTP | supported |
-| OpenClaw | Streamable HTTP | supported |
-| systemd / pm2 | Streamable HTTP service | supported |
-| Docker Compose | Streamable HTTP service | supported |
-
-Deployment profiles:
-
-| Profile | What it does |
+| Area | Status |
 | --- | --- |
-| Local retrieval | Forwards MCP tool calls to your Memos API. No local index. |
-| Local retrieval + semantic search | Adds a local JSON vector index. `memos_search` defaults to semantic search after sync. |
+| List, get, keyword search | supported |
+| Date range, day lookup, on-this-day lookup | supported |
+| Tag and resource aggregation | supported |
+| Create memo | supported, requires explicit visibility |
+| Update and archive memo | supported, opt-in |
+| Semantic search | supported, opt-in local vector index |
+| Delete memo | not implemented |
+| Memos admin/user management | not implemented |
+| Resource upload | not implemented |
+
+## Requirements
+
+| Requirement | Version / note |
+| --- | --- |
+| Node.js | 20 or newer |
+| Memos | v0.24+ recommended |
+| Memos token | Personal Access Token, shown as `memos_pat_xxxxxxxx` in examples |
+| Embedding API | Only needed for semantic search; must be OpenAI-compatible |
+
+## Choose A Setup
+
+| Setup | Best for | Transport | Local data |
+| --- | --- | --- | --- |
+| Client-launched stdio | Claude Desktop, Cursor, VS Code, Codex | `stdio` | none |
+| Local HTTP service | Hermes, OpenClaw, custom MCP clients | Streamable HTTP | none |
+| Semantic search profile | Better recall over memo history | `stdio` or HTTP | JSON vector index |
+
+Supported client examples:
+
+| Client / runtime | Example included |
+| --- | --- |
+| Claude Desktop | yes |
+| Cursor | yes |
+| VS Code Copilot MCP | yes |
+| Codex CLI | yes |
+| Hermes Agent | yes |
+| OpenClaw | yes |
+| Generic Streamable HTTP | yes |
+| systemd / pm2 | service deployment |
+| Docker Compose | service deployment |
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph Clients["MCP clients"]
+    StdioClients["Claude / Cursor / VS Code / Codex"]
+    HttpClients["Hermes / OpenClaw / HTTP clients"]
+  end
+
+  subgraph Server["memos-mcp"]
+    Transport["stdio or Streamable HTTP"]
+    Registry["Tool registry"]
+    Gate["Permission gate"]
+    Auth["Token resolver"]
+    Api["Memos REST client"]
+    Normalize["Memo normalizer"]
+    Search["Search router"]
+    Indexer["Semantic indexer"]
+  end
+
+  subgraph Data["Local data"]
+    Index["JSON vector index"]
+  end
+
+  subgraph External["External services"]
+    Memos["Memos API"]
+    Embed["Embedding API"]
+  end
+
+  StdioClients -->|env token| Transport
+  HttpClients -->|Authorization header| Transport
+  Transport --> Registry --> Gate --> Auth --> Api --> Memos
+  Api --> Normalize --> Registry
+  Registry --> Search
+  Search -->|keyword mode| Api
+  Search -->|semantic mode| Index
+  Registry -->|memos_sync_index| Indexer
+  Indexer --> Api
+  Indexer --> Embed
+  Indexer --> Index
+```
+
+Key behavior:
+
+| Part | Behavior |
+| --- | --- |
+| `stdio` auth | Token comes from `MEMOS_ACCESS_TOKEN`. |
+| HTTP auth | Token comes from each request's `Authorization: Bearer ...` header. |
+| Permission gate | Read-only mode hides write tools from `tools/list`. |
+| Semantic index | `memos_sync_index` reads memo pages, calls embeddings, writes `MEMOS_MCP_INDEX_DB`. |
+| Search routing | `memos_search` uses semantic mode by default only when semantic search is enabled. |
 
 ## Install
 
@@ -41,7 +121,7 @@ cp .env.example .env
 npm run build
 ```
 
-Minimum config:
+Minimum `.env` for stdio:
 
 ```env
 MEMOS_BASE_URL=https://memos.example.com
@@ -49,51 +129,193 @@ MEMOS_ACCESS_TOKEN=memos_pat_xxxxxxxx
 MEMOS_MCP_TRANSPORT=stdio
 ```
 
-## Run
+Run once to verify the build:
 
-### stdio
+```bash
+npm run verify
+```
 
-Use stdio when the MCP client starts the server process.
+## Deployment
+
+### Client-Launched stdio
+
+Use this when the MCP client starts the server process.
 
 ```bash
 MEMOS_BASE_URL=https://memos.example.com \
 MEMOS_ACCESS_TOKEN=memos_pat_xxxxxxxx \
-npm run start
+MEMOS_MCP_TRANSPORT=stdio \
+node dist/index.js
 ```
 
-### Local Streamable HTTP
+Client config should use an absolute path to `dist/index.js`.
 
-Use HTTP when you want a local service. The client sends the Memos token in the request header.
+### Local HTTP Service
+
+Use this when the MCP client connects to an HTTP endpoint.
 
 ```bash
+MEMOS_BASE_URL=https://memos.example.com \
 MEMOS_MCP_TRANSPORT=http \
-MEMOS_BASE_URL=https://memos.example.com \
-npm run start
+MEMOS_MCP_HOST=127.0.0.1 \
+MEMOS_MCP_PORT=8080 \
+node dist/index.js
 ```
 
-Endpoint: `http://127.0.0.1:8080/mcp`
+Endpoint:
 
-Health check: `http://127.0.0.1:8080/healthz`
+```text
+http://127.0.0.1:8080/mcp
+```
 
-### Semantic Search
+Health check:
+
+```text
+http://127.0.0.1:8080/healthz
+```
+
+HTTP clients must send the Memos token:
+
+```http
+Authorization: Bearer memos_pat_xxxxxxxx
+```
+
+### Semantic Search Profile
+
+Add these variables to either stdio or HTTP deployment:
+
+```env
+MEMOS_MCP_ENABLE_SEMANTIC_SEARCH=true
+MEMOS_MCP_INDEX_DB=./data/memos-mcp-index.json
+MEMOS_MCP_EMBEDDING_PROVIDER=openai-compatible
+MEMOS_MCP_EMBEDDING_BASE_URL=https://api.example.com/v1
+MEMOS_MCP_EMBEDDING_MODEL=BAAI/bge-m3
+MEMOS_MCP_EMBEDDING_API_KEY=sk_xxxxxxxx
+MEMOS_MCP_EMBEDDING_BATCH_SIZE=32
+```
+
+Then call these tools from your MCP client:
+
+```text
+memos_sync_index
+memos_index_status
+memos_search {"query":"your query"}
+```
+
+Notes:
+
+- `memos_sync_index` sends memo text to the configured embedding API.
+- The index file should not be shared between different Memos accounts or embedding models.
+- Use `mode: "keyword"` in `memos_search` to bypass semantic search.
+
+### Docker Compose
+
+```yaml
+services:
+  memos-mcp:
+    image: ghcr.io/charyeahowo/memos-mcp:main
+    restart: unless-stopped
+    environment:
+      MEMOS_BASE_URL: http://host.docker.internal:5230
+      MEMOS_MCP_TRANSPORT: http
+      MEMOS_MCP_HOST: 0.0.0.0
+      MEMOS_MCP_PORT: 8080
+      MEMOS_MCP_READONLY: "false"
+      MEMOS_MCP_ENABLE_UPDATE_TOOLS: "false"
+      MEMOS_MCP_ENABLE_SEMANTIC_SEARCH: "false"
+      MEMOS_MCP_INDEX_DB: /data/memos-mcp-index.json
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - memos-mcp-data:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  memos-mcp-data:
+```
+
+If you enable semantic search in Docker, add the embedding variables from the semantic profile section.
+
+### systemd
+
+Create `/etc/memos-mcp/memos-mcp.env`:
+
+```env
+MEMOS_BASE_URL=http://127.0.0.1:5230
+MEMOS_MCP_TRANSPORT=http
+MEMOS_MCP_HOST=127.0.0.1
+MEMOS_MCP_PORT=8080
+MEMOS_MCP_READONLY=false
+MEMOS_MCP_ENABLE_UPDATE_TOOLS=false
+```
+
+Create `/etc/systemd/system/memos-mcp.service`:
+
+```ini
+[Unit]
+Description=memos-mcp
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/memos-mcp
+EnvironmentFile=/etc/memos-mcp/memos-mcp.env
+ExecStart=/usr/bin/node /opt/memos-mcp/dist/index.js
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Start:
 
 ```bash
-MEMOS_MCP_ENABLE_SEMANTIC_SEARCH=true \
-MEMOS_MCP_INDEX_DB=./data/memos-mcp-index.json \
-MEMOS_MCP_EMBEDDING_PROVIDER=openai-compatible \
-MEMOS_MCP_EMBEDDING_BASE_URL=http://127.0.0.1:11434/v1 \
-MEMOS_MCP_EMBEDDING_MODEL=nomic-embed-text \
-MEMOS_BASE_URL=https://memos.example.com \
-MEMOS_ACCESS_TOKEN=memos_pat_xxxxxxxx \
-npm run start
+sudo systemctl daemon-reload
+sudo systemctl enable --now memos-mcp
+journalctl -u memos-mcp -f
 ```
 
-After connecting from your MCP client:
+### pm2
 
-1. Call `memos_sync_index`.
-2. Call `memos_index_status`.
-3. Use `memos_search`; `mode: "auto"` is semantic when semantic search is enabled.
-4. Use `mode: "keyword"` to force Memos native keyword search.
+```js
+module.exports = {
+  apps: [
+    {
+      name: "memos-mcp",
+      script: "dist/index.js",
+      env: {
+        MEMOS_BASE_URL: "http://127.0.0.1:5230",
+        MEMOS_MCP_TRANSPORT: "http",
+        MEMOS_MCP_HOST: "127.0.0.1",
+        MEMOS_MCP_PORT: "8080"
+      }
+    }
+  ]
+};
+```
+
+```bash
+pm2 start ecosystem.config.cjs
+pm2 save
+```
+
+### Reverse Proxy
+
+If you proxy HTTP mode, preserve the `Authorization` header.
+
+```nginx
+location /mcp {
+  proxy_pass http://127.0.0.1:8080/mcp;
+  proxy_set_header Authorization $http_authorization;
+  proxy_set_header Host $host;
+}
+
+location /healthz {
+  proxy_pass http://127.0.0.1:8080/healthz;
+}
+```
 
 ## Client Configuration
 
@@ -194,135 +416,90 @@ CLI shape:
 openclaw mcp set memos '{"url":"http://127.0.0.1:8080/mcp","transport":"streamable-http","headers":{"Authorization":"Bearer memos_pat_xxxxxxxx"}}'
 ```
 
-## Deployment
-
-### Docker Compose
-
-```yaml
-services:
-  memos-mcp:
-    image: ghcr.io/charyeahowo/memos-mcp:main
-    restart: unless-stopped
-    environment:
-      MEMOS_BASE_URL: http://host.docker.internal:5230
-      MEMOS_MCP_TRANSPORT: http
-      MEMOS_MCP_HOST: 0.0.0.0
-      MEMOS_MCP_PORT: 8080
-      MEMOS_MCP_READONLY: "false"
-      MEMOS_MCP_ENABLE_UPDATE_TOOLS: "false"
-    ports:
-      - "127.0.0.1:8080:8080"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-```
-
-Docker builds are validated by GitHub Actions; a local Docker install is not required for development on this machine.
-
-### systemd
-
-```ini
-[Unit]
-Description=memos-mcp
-After=network-online.target
-
-[Service]
-Type=simple
-WorkingDirectory=/opt/memos-mcp
-EnvironmentFile=/etc/memos-mcp/memos-mcp.env
-ExecStart=/usr/bin/node /opt/memos-mcp/dist/index.js
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Environment file:
-
-```env
-MEMOS_BASE_URL=http://127.0.0.1:5230
-MEMOS_MCP_TRANSPORT=http
-MEMOS_MCP_HOST=127.0.0.1
-MEMOS_MCP_PORT=8080
-```
-
-### pm2
-
-```js
-module.exports = {
-  apps: [
-    {
-      name: "memos-mcp",
-      script: "dist/index.js",
-      env: {
-        MEMOS_BASE_URL: "http://127.0.0.1:5230",
-        MEMOS_MCP_TRANSPORT: "http",
-        MEMOS_MCP_HOST: "127.0.0.1",
-        MEMOS_MCP_PORT: "8080"
-      }
-    }
-  ]
-};
-```
-
 ## Tools
 
-| Tool | Mode | Notes |
+| Tool | Type | Availability |
 | --- | --- | --- |
-| `memos_list` | read | list recent memos |
-| `memos_get` | read | get one memo by id or `memos/{id}` |
-| `memos_search` | read | semantic by default when enabled; keyword otherwise |
-| `memos_get_day` | read | timezone-aware day lookup |
-| `memos_get_range` | read | timezone-aware range lookup |
-| `memos_on_this_day` | read | same month/day history |
-| `memos_get_by_tag` | read | tag lookup |
-| `tags_list` | read | local tag aggregation |
-| `resources_list` | read | local resource aggregation |
-| `memos_create` | write | requires explicit `PRIVATE` / `PROTECTED` / `PUBLIC` |
-| `memos_update` | write | opt-in via `MEMOS_MCP_ENABLE_UPDATE_TOOLS=true` |
-| `memos_archive` | write | opt-in via `MEMOS_MCP_ENABLE_UPDATE_TOOLS=true` |
-| `memos_sync_index` | read | semantic profile only |
-| `memos_index_status` | read | semantic profile only |
-
-When `MEMOS_MCP_READONLY=true`, all write tools are hidden from `tools/list`.
+| `memos_list` | read | default |
+| `memos_get` | read | default |
+| `memos_search` | read | keyword by default, semantic when enabled |
+| `memos_get_day` | read | default |
+| `memos_get_range` | read | default |
+| `memos_on_this_day` | read | default |
+| `memos_get_by_tag` | read | default |
+| `tags_list` | read | default |
+| `resources_list` | read | default |
+| `memos_create` | write | hidden when `MEMOS_MCP_READONLY=true` |
+| `memos_update` | write | requires `MEMOS_MCP_ENABLE_UPDATE_TOOLS=true` |
+| `memos_archive` | write | requires `MEMOS_MCP_ENABLE_UPDATE_TOOLS=true` |
+| `memos_sync_index` | read | requires `MEMOS_MCP_ENABLE_SEMANTIC_SEARCH=true` |
+| `memos_index_status` | read | requires `MEMOS_MCP_ENABLE_SEMANTIC_SEARCH=true` |
 
 ## Configuration
 
-| Variable | Default | Notes |
-| --- | --- | --- |
-| `MEMOS_BASE_URL` | required | Memos instance URL |
-| `MEMOS_ACCESS_TOKEN` | stdio required | optional for HTTP if client sends `Authorization` |
-| `MEMOS_MCP_TRANSPORT` | `stdio` | `stdio` or `http` |
-| `MEMOS_MCP_HOST` | `127.0.0.1` | HTTP bind host |
-| `MEMOS_MCP_PORT` | `8080` | HTTP port |
-| `MEMOS_MCP_READONLY` | `false` | hides write tools |
-| `MEMOS_MCP_ENABLE_UPDATE_TOOLS` | `false` | enables update/archive |
-| `MEMOS_MCP_TIMEZONE` | `UTC` | IANA timezone |
-| `MEMOS_MCP_ENABLE_SEMANTIC_SEARCH` | `false` | enables semantic index tools and semantic-by-default search |
-| `MEMOS_MCP_INDEX_DB` | `./data/memos-mcp-index.json` | local JSON vector index |
-| `MEMOS_MCP_EMBEDDING_PROVIDER` | `disabled` | `disabled` or `openai-compatible` |
-| `MEMOS_MCP_EMBEDDING_BASE_URL` | unset | OpenAI-compatible base URL |
-| `MEMOS_MCP_EMBEDDING_MODEL` | unset | embedding model |
-| `MEMOS_MCP_EMBEDDING_API_KEY` | unset | optional embedding API key |
-| `MEMOS_MCP_EMBEDDING_BATCH_SIZE` | `32` | 1-128 |
+| Variable | Default | Required | Description |
+| --- | --- | --- | --- |
+| `MEMOS_BASE_URL` | none | yes | Memos instance URL |
+| `MEMOS_ACCESS_TOKEN` | none | stdio only | Memos PAT for stdio mode |
+| `MEMOS_MCP_TRANSPORT` | `stdio` | no | `stdio` or `http` |
+| `MEMOS_MCP_HOST` | `127.0.0.1` | no | HTTP bind host |
+| `MEMOS_MCP_PORT` | `8080` | no | HTTP port |
+| `MEMOS_MCP_READONLY` | `false` | no | Hide write tools |
+| `MEMOS_MCP_ENABLE_UPDATE_TOOLS` | `false` | no | Enable update/archive |
+| `MEMOS_MCP_TIMEZONE` | `UTC` | no | IANA timezone for date tools |
+| `MEMOS_MCP_ENABLE_SEMANTIC_SEARCH` | `false` | no | Enable semantic tools and semantic default search |
+| `MEMOS_MCP_INDEX_DB` | `./data/memos-mcp-index.json` | semantic only | Local JSON vector index path |
+| `MEMOS_MCP_EMBEDDING_PROVIDER` | `disabled` | semantic only | `disabled` or `openai-compatible` |
+| `MEMOS_MCP_EMBEDDING_BASE_URL` | none | semantic only | OpenAI-compatible base URL |
+| `MEMOS_MCP_EMBEDDING_MODEL` | none | semantic only | Embedding model |
+| `MEMOS_MCP_EMBEDDING_API_KEY` | none | no | Embedding API key |
+| `MEMOS_MCP_EMBEDDING_BATCH_SIZE` | `32` | no | 1-128 |
+
+## Verify
+
+```bash
+npm run verify
+npm run smoke:http
+```
+
+Real Memos API smoke test:
+
+```bash
+MEMOS_BASE_URL=https://memos.example.com \
+MEMOS_ACCESS_TOKEN=memos_pat_xxxxxxxx \
+npm run smoke:memos
+```
+
+Write smoke test:
+
+```bash
+MEMOS_BASE_URL=https://memos.example.com \
+MEMOS_ACCESS_TOKEN=memos_pat_xxxxxxxx \
+MEMOS_MCP_SMOKE_WRITE=true \
+npm run smoke:memos
+```
+
+## Troubleshooting
+
+| Symptom | Check |
+| --- | --- |
+| Client cannot start stdio server | Use an absolute `dist/index.js` path and run `npm run build`. |
+| HTTP client gets auth errors | Send `Authorization: Bearer memos_pat_xxxxxxxx` with every MCP request. |
+| `memos_search` says index is empty | Call `memos_sync_index` before semantic search. |
+| Semantic search returns old results | Re-run `memos_sync_index` after memo changes. |
+| Date tools return unexpected days | Set `MEMOS_MCP_TIMEZONE`, for example `Asia/Shanghai`. |
+| Write tools are missing | Check `MEMOS_MCP_READONLY` and `MEMOS_MCP_ENABLE_UPDATE_TOOLS`. |
 
 ## Development
 
 ```bash
+npm install
 npm run typecheck
 npm test
 npm run build
 npm run validate:repo
 npm run smoke:http
 ```
-
-Combined check:
-
-```bash
-npm run verify
-```
-
-GitHub Actions runs CI on Node.js 20 and 22 and builds/pushes the Docker image through GHCR on `main` and version tags.
 
 ## More Docs
 

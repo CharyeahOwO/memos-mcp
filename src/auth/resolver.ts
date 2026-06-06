@@ -8,8 +8,6 @@ import type { AppConfig } from "../config/index.js";
  * 关键思想：把"这次调用该用哪个 token 去连哪个 Memos"做成一个可替换的部件。
  * - stdio 模式：钥匙来自环境变量（EnvAuthResolver）。
  * - 本地 http 模式：钥匙来自每个请求的 Authorization header（HttpHeaderAuthResolver）。
- *
- * 注意：HTTP 传输只是本机/局域网接入方式，不代表项目要提供公网多用户托管。
  */
 
 /** tool handler 第二参数 extra 的最小结构（只取我们需要的 header 部分） */
