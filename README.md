@@ -444,3 +444,9 @@ npm run smoke:memos
 ## License
 
 [MIT](./LICENSE) © CharyeahOwO
+
+### Friends & Links
+
+<a href="https://linux.do" target="_blank">
+  <img src="https://img.shields.io/badge/LINUX.DO-Tech_Community-FFB003?style=for-the-badge&logo=linux&logoColor=white" alt="LINUX.DO" />
+</a>

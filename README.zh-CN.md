@@ -444,3 +444,10 @@ npm run smoke:memos
 ## 许可证
 
 [MIT](./LICENSE) © CharyeahOwO
+
+
+## 友情链接
+
+<a href="https://linux.do" target="_blank">
+  <img src="https://img.shields.io/badge/LINUX.DO-技术社区-FFB003?style=for-the-badge&logo=linux&logoColor=white" alt="LINUX.DO" />
+</a>
