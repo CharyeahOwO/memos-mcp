@@ -1,7 +1,7 @@
 /**
  * 极简日志。
  *
- * 安全红线（见 docs/decisions.md 决策 6）：绝不打印 Authorization 头、token、
+ * 安全红线（见 docs/architecture.md Safety Defaults）：绝不打印 Authorization 头、token、
  * 或 memo 内容。redactToken 仅在确需提及 token 时显示前缀，掩盖主体。
  *
  * 注意：stdio 传输用 stdout 传输 MCP 协议消息，因此日志一律走 stderr，

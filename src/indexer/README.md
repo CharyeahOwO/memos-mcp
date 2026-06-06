@@ -9,4 +9,4 @@ Current responsibilities:
 - Manual sync, status inspection, and semantic search.
 - No base-profile dependency on SQLite, vector libraries, or local model runtimes.
 
-Future improvements can replace the JSON store with SQLite/FTS/vector storage without changing the tool surface. See `docs/roadmap.md` and `docs/semantic-search.md`.
+Future improvements can replace the JSON store with SQLite/FTS/vector storage without changing the tool surface. See `docs/architecture.md` and `docs/semantic-search.md`.

@@ -12,4 +12,4 @@
 
 - [ ] No real tokens, private domains, memo content dumps, `.env`, SQLite DBs, or local caches are committed.
 - [ ] New write tools are gated and documented.
-- [ ] README/docs/examples are updated when behavior or config changed.
+- [ ] README/docs are updated when behavior or config changed.

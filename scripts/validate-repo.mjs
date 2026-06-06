@@ -17,25 +17,9 @@ const requiredFiles = [
   ".github/ISSUE_TEMPLATE/bug_report.yml",
   ".github/ISSUE_TEMPLATE/feature_request.yml",
   ".github/ISSUE_TEMPLATE/config.yml",
-  "examples/claude-desktop.json",
-  "examples/cursor.json",
-  "examples/vscode.json",
-  "examples/codex.toml",
-  "examples/hermes.yaml",
-  "examples/openclaw.yaml",
-  "examples/docker-compose.yaml",
-  "examples/memos-mcp.service",
-  "examples/pm2.config.cjs",
-  "docs/quick-start.md",
-  "docs/configuration.md",
-  "docs/transports.md",
-  "docs/tools.md",
-  "docs/docker.md",
+  "docs/architecture.md",
   "docs/deployment.md",
-  "docs/security.md",
-  "docs/troubleshooting.md",
   "docs/development.md",
-  "docs/memos-api-compatibility.md",
   "docs/semantic-search.md",
   "src/indexer/README.md",
 ];
@@ -47,12 +31,27 @@ for (const file of requiredFiles) {
   }
 }
 
-for (const file of [
-  "examples/claude-desktop.json",
-  "examples/cursor.json",
-  "examples/vscode.json",
-]) {
-  JSON.parse(readFileSync(join(root, file), "utf8"));
+const requiredReadmeSnippets = [
+  "Claude Desktop",
+  "Cursor",
+  "VS Code Copilot MCP",
+  "Codex CLI",
+  "Hermes Agent",
+  "OpenClaw",
+  "systemd",
+  "pm2",
+  "Docker Compose",
+  "mcpServers",
+  "[mcp_servers.memos]",
+  "mcp_servers:",
+  "openclaw mcp set",
+];
+
+const readme = readFileSync(join(root, "README.md"), "utf8");
+for (const snippet of requiredReadmeSnippets) {
+  if (!readme.includes(snippet)) {
+    throw new Error(`README.md is missing required snippet: ${snippet}`);
+  }
 }
 
 const forbiddenSecretPattern = /memos_pat_(?!x{4,}\b)[A-Za-z0-9_-]{16,}/;
@@ -86,4 +85,4 @@ function walk(dir) {
 
 walk(root);
 
-console.log("Examples, docs, and secret hygiene checks passed");
+console.log("Repository docs, README config snippets, and secret hygiene checks passed");

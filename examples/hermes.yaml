@@ -1,8 +1,0 @@
-mcp_servers:
-  memos:
-    url: "http://127.0.0.1:8080/mcp"
-    headers:
-      Authorization: "Bearer memos_pat_xxxxxxxx"
-    connect_timeout: 10
-    timeout: 60
-    enabled: true

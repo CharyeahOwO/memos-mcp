@@ -19,7 +19,6 @@
   "files": [
     "dist",
     "docs",
-    "examples",
     ".env.example",
     "README.md",
     "CONTRIBUTING.md",
@@ -33,8 +32,8 @@
     "start:http": "cross-env MEMOS_MCP_TRANSPORT=http node dist/index.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "verify": "npm run typecheck && npm test && npm run build && npm run validate:examples",
-    "validate:examples": "node scripts/validate-examples.mjs",
+    "verify": "npm run typecheck && npm test && npm run build && npm run validate:repo",
+    "validate:repo": "node scripts/validate-repo.mjs",
     "smoke:http": "node scripts/smoke-http.mjs",
     "smoke:memos": "node scripts/smoke-memos-api.mjs"
   },

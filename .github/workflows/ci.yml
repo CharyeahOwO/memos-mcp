@@ -46,5 +46,5 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Validate examples and docs
-        run: npm run validate:examples
+      - name: Validate docs and repository hygiene
+        run: npm run validate:repo

@@ -10,7 +10,7 @@ import type {
 /**
  * 归一化层：把上游 Memos API 的原始响应转成内部稳定形状。
  *
- * 这是隔离"Memos API 版本漂移"的唯一防线（见 docs/decisions.md 已知风险）。
+ * 这是隔离"Memos API 版本漂移"的唯一防线（见 docs/architecture.md）。
  * v0.22 之后字段从 snake_case 迁到 camelCase、rowStatus 改成 state、
  * 裸 id 改成 "memos/{id}" 资源名——这些差异全部在这里抹平。
  */

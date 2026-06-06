@@ -43,6 +43,6 @@ npm run smoke:memos
 
 - `npm run verify` passes.
 - `npm run smoke:http` passes after a build.
-- New config keys are added to `.env.example` and `docs/configuration.md`.
-- New tools are added to `docs/tools.md`, README, and registration tests.
+- New config keys are added to `.env.example` and README.
+- New tools are added to README and registration tests.
 - No real secrets or private domains are included.
