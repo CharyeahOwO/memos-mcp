@@ -7,7 +7,7 @@ import { createCreateTool } from "../tools/create.js";
 import { logger } from "../logging/logger.js";
 
 /**
- * 权限网关（见 docs/decisions.md 决策 4）。
+ * 权限网关（见 docs/architecture.md Safety Model）。
  *
  * - 收集所有工具定义。
  * - 只读模式（config.readonly）下，写工具（isWrite）直接【不注册】，

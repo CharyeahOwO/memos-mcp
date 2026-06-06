@@ -3,14 +3,13 @@ import { AuthError } from "../memos/errors.js";
 import type { AppConfig } from "../config/index.js";
 
 /**
- * 鉴权来源抽象 —— 多用户留门的核心（见 docs/decisions.md 决策 2）。
+ * 鉴权来源抽象 —— 本地部署下统一处理 Memos token。
  *
- * 关键思想：把"这次调用该用谁的钥匙去连哪个 Memos"做成一个可替换的部件。
+ * 关键思想：把"这次调用该用哪个 token 去连哪个 Memos"做成一个可替换的部件。
  * - stdio 模式：钥匙来自环境变量（EnvAuthResolver）。
- * - http 模式：钥匙来自每个请求的 Authorization header（HttpHeaderAuthResolver），
- *   服务器自己不存任何钥匙。
- * - 将来要做多用户托管：再加一个"按登录账户查 token"的 resolver 即可，
- *   client/tools/server 全部不用动。
+ * - 本地 http 模式：钥匙来自每个请求的 Authorization header（HttpHeaderAuthResolver）。
+ *
+ * 注意：HTTP 传输只是本机/局域网接入方式，不代表项目要提供公网多用户托管。
  */
 
 /** tool handler 第二参数 extra 的最小结构（只取我们需要的 header 部分） */
@@ -62,7 +61,7 @@ export class EnvAuthResolver extends BaseAuthResolver {
   }
 }
 
-/** http 模式：token 来自每个请求的 Authorization header */
+/** 本地 http 模式：token 来自每个请求的 Authorization header */
 export class HttpHeaderAuthResolver extends BaseAuthResolver {
   private readonly baseUrl: string;
 

@@ -4,15 +4,15 @@
 
 一个面向 [Memos](https://github.com/usememos/memos) 的 [Model Context Protocol](https://modelcontextprotocol.io) 服务器——把你的 Memos 实例变成 AI 客户端可搜索、可安全写入的记忆后端。
 
-> **状态：** 早期开发中（`v0.1.0`）。核心的读写工具已在 stdio 和 HTTP 两种传输下可用。语义搜索、时间检索与打包分发在路线图中。
+> **状态：** 早期开发中（`v0.1.0`）。核心的读写工具已在本地 stdio 和本地 HTTP 两种传输下可用。语义搜索、时间检索与打包分发在路线图中。
 
-`memos-mcp` 的定位是一个**公开、生产级的工具**，而非个人临时脚本。它既可以本地单用户运行，也可以托管部署——托管模式下由调用方在每个请求中自带 Memos 凭据，服务器自身不存储任何 token。
+`memos-mcp` 的定位是一个**本地优先、生产级的工具**，而非个人临时脚本，也不再定位为云端托管服务。项目支持两种部署形态：轻量的本地检索服务，以及“本地检索 + 可选向量/语义索引”的增强版。
 
 ## 功能特性
 
 - **核心笔记工具** —— 列出、获取、新建、关键词搜索笔记。
-- **两种传输方式** —— `stdio`（本地桌面客户端，如 Claude Desktop、Cursor 等）与 **Streamable HTTP**（远程 / 托管）。
-- **调用方自带钥匙鉴权** —— HTTP 模式下，调用方在每个请求中提供 `Authorization: Bearer <token>`；服务器不存储任何凭据，并按 token 隔离不同调用方（与 GitHub 官方 MCP 服务器同款思路）。
+- **两种本地传输方式** —— `stdio`（本地桌面客户端，如 Claude Desktop、Cursor 等）与 **Streamable HTTP**（本机 HTTP 型 MCP 客户端）。
+- **本地凭据处理** —— stdio 模式从环境变量读取 token；本地 HTTP 模式可由客户端在每个请求中提供 `Authorization: Bearer <token>`。服务器不再定位为公网多用户网关。
 - **默认安全** —— 本版本不实现破坏性工具；全局只读模式可隐藏所有写工具；新建笔记默认 `PRIVATE` 私密；HTTP 服务器默认绑定 `127.0.0.1`。
 - **抗版本漂移** —— 上游 Memos 响应会被归一化成稳定的内部结构，把 Memos API 跨版本的差异隔离在一处。
 - **零重依赖** —— 基础服务器不加载任何嵌入或向量库。语义搜索将作为可选扩展提供。
@@ -45,9 +45,9 @@ npm run start
 
 开发时可用 `npm run dev`（监听模式），无需先构建。
 
-### 以 HTTP 服务器运行
+### 以本地 HTTP 服务器运行
 
-适用于远程 / 托管。环境里不放 token——每个调用方自带自己的钥匙。
+适用于支持 HTTP 的本地 MCP 客户端。本地客户端在每个请求里发送 `Authorization: Bearer <token>`。
 
 ```bash
 MEMOS_MCP_TRANSPORT=http \
@@ -57,7 +57,7 @@ npm run start
 
 服务器监听 `http://127.0.0.1:8080/mcp`，健康检查在 `/healthz`。
 
-> **公开暴露时：** 保持绑定 `127.0.0.1`，前面套一层带 **HTTPS** 的反向代理。切勿直接把 `0.0.0.0` 暴露到公网。每个调用方都必须自带 `Authorization: Bearer <自己的 memos token>`。
+> **本地部署定位：** 本项目不再面向作者提供云服务或公网托管服务。除非你明确需要局域网访问，否则保持绑定 `127.0.0.1`；不要直接暴露到公网。
 
 ## 客户端配置
 
@@ -78,7 +78,7 @@ npm run start
 }
 ```
 
-### HTTP（调用方自带 token）
+### HTTP（本地客户端）
 
 ```json
 {
@@ -112,7 +112,7 @@ npm run start
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `MEMOS_BASE_URL` | — | **必填。** Memos 实例地址（不带结尾斜杠）。 |
-| `MEMOS_ACCESS_TOKEN` | — | Personal Access Token。**stdio 模式必填**；HTTP 模式可选（调用方自带）。 |
+| `MEMOS_ACCESS_TOKEN` | — | Personal Access Token。**stdio 模式必填**；本地 HTTP 模式可选，如果客户端会发送 `Authorization: Bearer <token>` 则可不填。 |
 | `MEMOS_MCP_TRANSPORT` | `stdio` | `stdio` 或 `http`。 |
 | `MEMOS_MCP_HOST` | `127.0.0.1` | HTTP 绑定地址。 |
 | `MEMOS_MCP_PORT` | `8080` | HTTP 端口。 |
@@ -125,7 +125,7 @@ npm run start
 
 ```
 AI 客户端
-  │  MCP（stdio | Streamable HTTP）
+  │  MCP（本地 stdio | 本地 Streamable HTTP）
   ▼
 传输层               只说 MCP 协议，不含业务逻辑
   ▼
@@ -138,7 +138,7 @@ Memos 实例
 
 核心思想：
 
-- **凭据来源是一层抽象。** stdio 从环境变量读取；HTTP 从每个请求的 `Authorization` 头读取。将来要做托管多用户模式，只需新增一个解析器，无需改动其余代码。
+- **凭据来源是一层抽象。** stdio 从环境变量读取；本地 HTTP 可从每个请求的 `Authorization` 头读取。这是为了本地接入灵活性，不是为了公网多用户托管。
 - **归一化层**把上游 Memos 响应转成稳定的内部结构，使 Memos 跨版本的 API 变化被限制在一处。
 
 完整设计见 [`docs/architecture.md`](./docs/architecture.md)、[`docs/decisions.md`](./docs/decisions.md)、[`docs/roadmap.md`](./docs/roadmap.md)。
@@ -168,8 +168,8 @@ npm run build       # tsup 打包到 dist/
 
 - [x] 项目骨架：配置校验、传输层、鉴权抽象、归一化层。
 - [x] `memos_list`、`memos_get`、`memos_search`、`memos_create`。
-- [x] stdio + 无状态 Streamable HTTP 两种传输。
-- [x] 只读模式与每请求鉴权。
+- [x] 本地 stdio + 本地 Streamable HTTP 两种传输。
+- [x] 只读模式与本地 HTTP 请求头鉴权。
 
 ### 下一步 —— 更多核心工具
 
@@ -183,7 +183,7 @@ npm run build       # tsup 打包到 dist/
 - [ ] 本地 SQLite 缓存 + FTS5 关键词索引。
 - [ ] `memos_semantic_search`、`memos_sync_index`、`memos_index_status`。
 - [ ] 嵌入提供方：`disabled` / `local` / `openai-compatible`。
-- [ ] 托管多用户时按凭据隔离索引。
+- [ ] 向量增强版的单用户本地索引存储。
 
 ### 后续 —— 打包与分发
 

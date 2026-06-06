@@ -13,9 +13,8 @@ import type { Visibility } from "../config/index.js";
  *
  * 设计要点：
  * - 这是全项目唯一直接对接 Memos HTTP API 的地方。
- * - 每个实例携带一对 { baseUrl, token }，由调用方按"这次请求该用谁的钥匙"创建
- *   （stdio 来自 env、http 来自请求头，见 auth/resolver.ts）。因此天然支持
- *   多用户：不同请求用不同 token，互不干扰。
+ * - 每个实例携带一对 { baseUrl, token }，由 auth resolver 按当前本地调用创建
+ *   （stdio 来自 env、本地 http 来自请求头，见 auth/resolver.ts）。
  * - 所有响应都过 normalize，对外只暴露 NormalizedMemo。
  * - 失败统一抛 MemosApiError（中文信息）。
  */

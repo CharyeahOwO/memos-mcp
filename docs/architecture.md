@@ -2,31 +2,40 @@
 
 ## Purpose
 
-`memos-mcp` is a Model Context Protocol server for usememos/Memos.
+`memos-mcp` is a local-first Model Context Protocol server for usememos/Memos.
 
-The project should expose Memos as a reliable, searchable, and safely writable memory backend for AI clients.
+The project exposes a user's own Memos instance to local AI clients as a reliable, searchable, and safely writable memory backend.
 
-It should support normal note operations, time-based retrieval, semantic search, and multiple deployment modes.
+It supports two local deployment profiles:
+
+| Profile | Description |
+| --- | --- |
+| Base local retrieval | Lightweight local MCP server that forwards tool calls to the Memos REST API. |
+| Local retrieval + vector | Base local retrieval plus local SQLite cache, FTS, embeddings, and semantic search. |
 
 ## Non-Goals
 
+- Do not provide an author-hosted cloud service.
+- Do not build a public multi-user MCP gateway.
+- Do not store user Memos tokens in a hosted service.
+- Do not upload memo content, local indexes, or embedding cache to an author-controlled cloud.
 - Do not make this a MuLing-only private script.
-- Do not hard-code private domains, tokens, or personal workflow assumptions.
+- Do not hard-code private domains, tokens, paths, or personal workflow assumptions.
 - Do not expose destructive tools by default.
-- Do not require semantic search just to run basic Memos tools.
+- Do not require semantic search just to run the base local retrieval profile.
 - Do not require a public HTTP server for local usage.
+- Do not implement SSE unless a concrete compatibility need appears later.
 
 ## High-Level Architecture
 
 ```text
-AI Client
+Local AI Client
   │
   │ MCP
   ▼
-MCP Transport Layer
+Local MCP Transport Layer
   ├─ stdio
-  ├─ Streamable HTTP
-  └─ optional SSE compatibility
+  └─ Streamable HTTP bound to localhost by default
   │
   ▼
 Tool Registry / Permission Layer
@@ -40,34 +49,84 @@ Application Services
   ├─ Memos API Service
   ├─ Time Search Service
   ├─ Keyword Search Service
-  ├─ Semantic Search Service
-  └─ Index Sync Service
+  ├─ optional Semantic Search Service
+  └─ optional Index Sync Service
+  │
+  ├──────────────► Memos Instance
   │
   ▼
-Storage / Index Layer
+Optional Local Storage / Index Layer
   ├─ SQLite memo cache
   ├─ SQLite FTS5 index
   ├─ embedding cache
   └─ vector search storage
-  │
-  ▼
-Memos Instance
 ```
+
+The storage/index layer only exists in the local vector-enabled profile. The base profile should run without SQLite, embedding libraries, or model downloads.
+
+## Deployment Profiles
+
+### 1. Base Local Retrieval
+
+This is the default profile.
+
+Characteristics:
+
+- Runs on the user's machine or private host.
+- Uses stdio or localhost Streamable HTTP.
+- Reads/writes through the user's own Memos REST API.
+- Does not maintain a local memo cache or vector index.
+- Keeps dependencies small and startup fast.
+
+Primary tools:
+
+- `memos_list`
+- `memos_get`
+- `memos_search`
+- `memos_create`
+- `memos_get_day`
+- `memos_get_range`
+- `memos_on_this_day`
+- `memos_get_by_tag`
+- `tags_list`
+- `resources_list`
+
+### 2. Local Retrieval + Vector
+
+This profile is explicitly enabled by configuration.
+
+Characteristics:
+
+- Runs on the user's machine or private host.
+- Maintains local SQLite cache and indexes.
+- Supports FTS keyword search over the local cache.
+- Supports semantic search through local or OpenAI-compatible embedding providers.
+- Stores all index and embedding data locally.
+
+Additional tools:
+
+- `memos_sync_index`
+- `memos_index_status`
+- `memos_semantic_search`
+
+Isolation rule:
+
+- The index is designed for a single local user/profile by default.
+- If the same machine needs multiple Memos accounts, run multiple memos-mcp instances with different `MEMOS_MCP_INDEX_DB` paths.
 
 ## Layers
 
-### 1. MCP Transport Layer
-
-The server should support multiple transports.
+### 1. Local MCP Transport Layer
 
 Required:
 
 - `stdio` for local desktop clients and CLI-first users.
-- `streamable-http` for modern remote/local HTTP MCP clients.
+- `streamable-http` for local HTTP-capable MCP clients, Docker, service managers, or LAN-only private setups.
 
-Optional:
+Not planned:
 
-- `sse` if compatibility with older clients is useful.
+- `sse`, unless a concrete older-client compatibility requirement appears.
+- public cloud gateway transport.
 
 The transport layer should only handle MCP protocol concerns and should not contain Memos-specific business logic.
 
@@ -81,10 +140,15 @@ Safe tools can be enabled by default:
 - get
 - keyword search
 - time search
-- semantic search if configured
+- tag search
+- resource listing
 - create memo
+
+Vector-profile tools are enabled only when their dependencies/config are available:
+
 - sync index
 - index status
+- semantic search
 
 Risky tools should be permission-gated:
 
@@ -100,7 +164,23 @@ Destructive tools should be disabled by default:
 
 This layer should enforce read-only mode globally.
 
-### 3. Memos API Client Layer
+### 3. Local Auth / Credential Layer
+
+Credential handling is local-only.
+
+Sources:
+
+- stdio: `MEMOS_ACCESS_TOKEN` from environment variables.
+- local HTTP: `Authorization: Bearer <token>` from each request.
+
+Boundaries:
+
+- Do not design this as a hosted token broker.
+- Do not log tokens.
+- Do not write tokens to disk.
+- Do not promise safe public multi-user hosting.
+
+### 4. Memos API Client Layer
 
 The client should wrap the Memos HTTP REST API.
 
@@ -134,7 +214,7 @@ interface NormalizedMemo {
 }
 ```
 
-### 4. Time Search Layer
+### 5. Time Search Layer
 
 Time search must be first-class, not a prompt hack.
 
@@ -151,18 +231,18 @@ Rules:
 - API timestamps should be normalized before comparison.
 - Range boundaries should be documented clearly.
 
-### 5. Keyword Search Layer
+### 6. Keyword Search Layer
 
 Keyword search should support two sources:
 
-1. Memos native API search/filter if available.
-2. Local SQLite FTS5 index.
+1. Memos native API search/filter in the base local retrieval profile.
+2. Local SQLite FTS5 index in the vector-enabled profile.
 
-Local FTS is useful for stable, fast, offline-ish search behavior.
+Local FTS is useful for stable, fast, local search behavior, but it must not be required for basic usage.
 
-### 6. Semantic Search Layer
+### 7. Semantic Search Layer
 
-Semantic search should be optional but designed as a core feature.
+Semantic search is optional and only belongs to the local vector-enabled profile.
 
 Supported provider modes:
 
@@ -200,7 +280,7 @@ Tradeoffs:
 
 #### `openai-compatible`
 
-Use configurable OpenAI-compatible embedding endpoint.
+Use a configurable OpenAI-compatible embedding endpoint.
 
 Configurable fields:
 
@@ -215,12 +295,13 @@ Benefits:
 
 Tradeoffs:
 
-- Requires external service.
+- Requires an external service.
 - Must avoid logging secrets.
+- Memo content may leave the user's machine depending on the configured provider, so this must be explicit in docs.
 
-### 7. Storage / Index Layer
+### 8. Local Storage / Index Layer
 
-Use SQLite as the local index database.
+Use SQLite as the local index database for the vector-enabled profile.
 
 Suggested tables:
 
@@ -234,20 +315,20 @@ embeddings
 
 Indexes:
 
-- created time index.
-- updated time index.
-- tag index.
-- FTS5 virtual table for content.
-- vector/embedding storage depending on implementation.
+- created time index
+- updated time index
+- tag index
+- FTS5 virtual table for content
+- vector/embedding storage depending on implementation
 
 The index layer should support:
 
-- full sync.
-- incremental sync if Memos API allows.
-- rebuild index.
-- inspect status.
+- full sync
+- incremental sync if Memos API allows
+- rebuild index
+- inspect status
 
-### 8. Configuration Layer
+### 9. Configuration Layer
 
 Configuration should be environment-first with strict validation.
 
@@ -285,17 +366,17 @@ MEMOS_MCP_EMBEDDING_API_KEY=
 Best for:
 
 - Claude Desktop.
-- local MCP clients.
+- Cursor / VS Code-style local MCP clients.
 - simple personal usage.
 
-### HTTP / Streamable HTTP
+### Local Streamable HTTP
 
 Best for:
 
-- Hermes/OpenClaw.
-- remote MCP clients.
-- Docker deployments.
-- shared local services.
+- local HTTP-capable MCP clients.
+- Docker deployments on a private machine.
+- service managers such as systemd or pm2.
+- LAN-only private setups when the user explicitly wants them.
 
 Default host should be `127.0.0.1` for safety.
 
@@ -306,6 +387,8 @@ Docker should support persistent volume for:
 - SQLite index.
 - local embedding model cache.
 - logs if any.
+
+Docker is a packaging option for local/private deployment, not an author-hosted cloud service.
 
 ### Docker Compose
 
@@ -320,6 +403,8 @@ Compose should include:
 
 Default behavior should be conservative:
 
+- No author-hosted cloud service.
+- No public multi-user gateway.
 - HTTP binds to localhost.
 - Default memo visibility is private.
 - Read-only mode exists.
@@ -327,17 +412,17 @@ Default behavior should be conservative:
 - Update tools are disabled or explicitly gated.
 - Tokens are never logged.
 - Debug logs should not dump memo content unless explicitly enabled.
+- Vector indexes and embedding cache stay on the user's local filesystem.
 
 ## Suggested Repository Structure
-
-If TypeScript is chosen:
 
 ```text
 memos-mcp/
 ├── src/
 │   ├── index.ts
-│   ├── config.ts
-│   ├── permissions.ts
+│   ├── config/
+│   ├── auth/
+│   ├── logging/
 │   ├── server/
 │   │   ├── stdio.ts
 │   │   ├── http.ts
@@ -352,6 +437,8 @@ memos-mcp/
 │   │   ├── create.ts
 │   │   ├── search.ts
 │   │   ├── time-search.ts
+│   │   ├── tag.ts
+│   │   ├── resources.ts
 │   │   ├── semantic-search.ts
 │   │   └── index-status.ts
 │   ├── indexer/
@@ -376,27 +463,26 @@ memos-mcp/
 └── LICENSE
 ```
 
-## Candidate Tech Stack
+## Tech Stack
 
-TypeScript is currently only the leading candidate, not a final decision. The final choice should be based on MCP ecosystem fit, install experience, semantic-search dependencies, deployment complexity, and maintainability.
-
-Recommended if TypeScript is chosen:
+Current choice:
 
 - Runtime: Node.js 20/22+
+- Language: TypeScript
 - MCP SDK: `@modelcontextprotocol/sdk`
-- HTTP server: Hono or Express
+- HTTP server: Express for the current implementation
 - Config validation: Zod
-- Database: SQLite via `better-sqlite3`
+- Database: SQLite via `better-sqlite3` or equivalent when vector indexing is added
 - Test runner: Vitest
 - Build: tsup
 - Lint/format: ESLint + Prettier
-- Local embeddings: `@xenova/transformers`
+- Local embeddings: candidate `@xenova/transformers`
 - Package distribution: npm
 - Container distribution: Docker / GHCR
 
 ## Documentation Requirements
 
-The public project should include:
+The project should include:
 
 ```text
 docs/quick-start.md
@@ -417,10 +503,8 @@ examples/docker-compose.yaml
 
 ## Open Questions
 
-- Should the first implementation fork an existing Memos MCP project or start clean?
-- Should TypeScript be chosen for npm/npx ergonomics, or Python for FastMCP simplicity?
-- Should semantic search use local embeddings by default, or be disabled by default?
-- Should update/archive tools be enabled by default or opt-in only?
-- Should resource upload be included in the public default tool surface?
-- Should the project include a Web admin dashboard, or stay CLI/config-only?
 - How broad should Memos version compatibility be?
+- Should semantic search use a local embedding provider by default when explicitly enabled, or require provider selection?
+- Should update/archive tools be enabled by config or left for a later release?
+- Whether resource upload belongs in the default tool surface.
+- Whether semantic index should sync automatically by default or only through explicit tool calls.

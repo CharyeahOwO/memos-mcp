@@ -4,15 +4,15 @@
 
 A [Model Context Protocol](https://modelcontextprotocol.io) server for [Memos](https://github.com/usememos/memos) — expose your Memos instance to AI clients as a searchable, safely-writable memory backend.
 
-> **Status:** Early development (`v0.1.0`). The core read/write tools work over both stdio and HTTP. Semantic search, time-based retrieval, and packaging are on the roadmap.
+> **Status:** Early development (`v0.1.0`). The core read/write tools work over both local stdio and local HTTP. Semantic search, time-based retrieval, and packaging are on the roadmap.
 
-`memos-mcp` is built to be a **public, production-quality tool**, not a personal glue script. It can run locally for a single user, or be hosted so that callers bring their own Memos credentials per request — without the server ever storing a token.
+`memos-mcp` is built to be a **local-first, production-quality tool**, not a personal glue script and not a hosted cloud service. The project supports two deployment profiles: a lightweight local retrieval server, and a local retrieval server with an optional vector/semantic-search index.
 
 ## Features
 
 - **Core memo tools** — list, get, create, and keyword-search your memos.
-- **Two transports** — `stdio` for local desktop clients (Claude Desktop, Cursor, …) and **Streamable HTTP** for remote / hosted use.
-- **Bring-your-own-token auth** — in HTTP mode the caller supplies `Authorization: Bearer <token>` per request; the server stores no credentials and isolates callers by their token (the same model used by GitHub's MCP server).
+- **Two local transports** — `stdio` for local desktop clients (Claude Desktop, Cursor, …) and **Streamable HTTP** for local HTTP-capable MCP clients.
+- **Local credential handling** — in stdio mode the token comes from the environment; in local HTTP mode the client may supply `Authorization: Bearer <token>` per request. The server is not intended to be a public multi-user gateway.
 - **Safe by default** — destructive tools are not implemented in this release; a global read-only mode hides all write tools; new memos default to `PRIVATE` visibility; the HTTP server binds to `127.0.0.1`.
 - **Version-resilient** — upstream Memos responses are normalized into a stable internal shape, insulating the rest of the system from Memos API drift across versions.
 - **No heavy dependencies** — the base server runs without any embedding or vector libraries. Semantic search will be an opt-in extension.
@@ -45,9 +45,9 @@ npm run start
 
 During development, use `npm run dev` (watch mode) instead of building first.
 
-### Run as an HTTP server
+### Run as a local HTTP server
 
-For remote / hosted use. No token in the environment — each caller brings their own.
+For local HTTP-capable MCP clients. The local client sends `Authorization: Bearer <token>` with each request.
 
 ```bash
 MEMOS_MCP_TRANSPORT=http \
@@ -57,7 +57,7 @@ npm run start
 
 The server listens on `http://127.0.0.1:8080/mcp` with a health check at `/healthz`.
 
-> **Exposing it publicly:** keep the bind on `127.0.0.1` and put a reverse proxy with **HTTPS** in front of it. Never bind `0.0.0.0` directly to the internet. Each caller must send their own `Authorization: Bearer <their memos token>`.
+> **Local-only stance:** this project no longer targets hosted cloud service deployment. Keep the bind on `127.0.0.1` unless you explicitly know why you need LAN access, and do not expose it directly to the public internet.
 
 ## Client Configuration
 
@@ -78,7 +78,7 @@ The server listens on `http://127.0.0.1:8080/mcp` with a health check at `/healt
 }
 ```
 
-### HTTP (caller-supplied token)
+### HTTP (local client)
 
 ```json
 {
@@ -112,7 +112,7 @@ All configuration is via environment variables. See [`.env.example`](./.env.exam
 | Variable | Default | Description |
 | --- | --- | --- |
 | `MEMOS_BASE_URL` | — | **Required.** Memos instance URL (no trailing slash). |
-| `MEMOS_ACCESS_TOKEN` | — | Personal Access Token. **Required for stdio**; optional for HTTP (callers bring their own). |
+| `MEMOS_ACCESS_TOKEN` | — | Personal Access Token. **Required for stdio**; optional for local HTTP if the client sends `Authorization: Bearer <token>`. |
 | `MEMOS_MCP_TRANSPORT` | `stdio` | `stdio` or `http`. |
 | `MEMOS_MCP_HOST` | `127.0.0.1` | HTTP bind address. |
 | `MEMOS_MCP_PORT` | `8080` | HTTP port. |
@@ -125,7 +125,7 @@ All configuration is via environment variables. See [`.env.example`](./.env.exam
 
 ```
 AI Client
-  │  MCP (stdio | Streamable HTTP)
+  │  MCP (local stdio | local Streamable HTTP)
   ▼
 Transport Layer            speaks MCP only, no business logic
   ▼
@@ -139,7 +139,7 @@ Memos Instance
 
 Key ideas:
 
-- **The credential source is an abstraction.** stdio reads it from the environment; HTTP reads it from the per-request `Authorization` header. A future hosted, multi-user mode can add another resolver without touching the rest of the code.
+- **The credential source is an abstraction.** stdio reads it from the environment; local HTTP can read it from the per-request `Authorization` header. This is for local flexibility, not hosted multi-user service.
 - **A normalization layer** converts upstream Memos responses into a stable internal record, so Memos API changes between versions stay contained in one place.
 
 See [`docs/architecture.md`](./docs/architecture.md), [`docs/decisions.md`](./docs/decisions.md), and [`docs/roadmap.md`](./docs/roadmap.md) for the full design.
@@ -169,8 +169,8 @@ The project is built in stages. The current release is **Step 1 (core read/write
 
 - [x] Project skeleton: config validation, transports, auth abstraction, normalization layer.
 - [x] `memos_list`, `memos_get`, `memos_search`, `memos_create`.
-- [x] stdio + stateless Streamable HTTP transports.
-- [x] Read-only mode and per-request auth.
+- [x] Local stdio + local Streamable HTTP transports.
+- [x] Read-only mode and local HTTP header auth.
 
 ### Next — more core tools
 
@@ -184,7 +184,7 @@ The project is built in stages. The current release is **Step 1 (core read/write
 - [ ] Local SQLite cache + FTS5 keyword index.
 - [ ] `memos_semantic_search`, `memos_sync_index`, `memos_index_status`.
 - [ ] Embedding providers: `disabled` / `local` / `openai-compatible`.
-- [ ] Per-credential index isolation for multi-user hosting.
+- [ ] Single-user local index storage for the vector-enabled profile.
 
 ### Later — packaging & distribution
 

@@ -5,13 +5,13 @@ import { logger } from "../logging/logger.js";
 import type { AppConfig } from "../config/index.js";
 
 /**
- * 启动无状态 Streamable HTTP 传输（远程 / 云端用）。
+ * 启动无状态 Streamable HTTP 传输（本机 / 局域网用）。
  *
  * 无状态模式（sessionIdGenerator: undefined）：每个 POST /mcp 请求都新建一个
- * McpServer + transport，处理完即关闭。钥匙由调用方在 Authorization 头自带，
- * 服务器不存任何钥匙、不存任何会话状态（见 docs/decisions.md 决策 2/3）。
+ * McpServer + transport，处理完即关闭。token 由本地 HTTP 客户端在 Authorization
+ * 头自带，服务器不存任何钥匙、不存任何会话状态。
  *
- * 安全：默认绑 127.0.0.1。要对外暴露请用反向代理 + HTTPS，不要直接绑 0.0.0.0。
+ * 安全：默认绑 127.0.0.1。项目不定位为公网云服务，不要直接绑 0.0.0.0 暴露公网。
  */
 export async function startHttp(config: AppConfig): Promise<void> {
   const app = express();
@@ -68,8 +68,8 @@ export async function startHttp(config: AppConfig): Promise<void> {
       );
       if (config.host !== "127.0.0.1" && config.host !== "localhost") {
         logger.warn(
-          `当前绑定到 ${config.host}，已对外暴露。请确保前面有反向代理 + HTTPS，` +
-            "且每个调用方自带 Authorization: Bearer <自己的 Memos token>。"
+          `当前绑定到 ${config.host}，可能被本机外访问。项目定位为本地部署，` +
+            "请不要直接暴露公网；如需局域网访问，请自行处理网络边界与凭据安全。"
         );
       }
       resolve();

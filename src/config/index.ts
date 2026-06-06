@@ -5,8 +5,8 @@ import { z } from "zod";
  *
  * 设计要点：
  * - 用 zod 严格校验，非法值直接报友好中文错误并退出，不静默兜底。
- * - 条件校验：stdio 模式必须有 access token；http 模式不强制
- *   （http 模式下钥匙由每个调用方在请求头自带，见 auth/resolver.ts）。
+ * - 条件校验：stdio 模式必须有 access token；本地 http 模式不强制
+ *   （本地 HTTP 客户端可在请求头自带 token，见 auth/resolver.ts）。
  */
 
 export const TRANSPORTS = ["stdio", "http"] as const;
@@ -125,7 +125,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   if (raw.MEMOS_MCP_TRANSPORT === "stdio" && !raw.MEMOS_ACCESS_TOKEN) {
     throw new ConfigError(
       "配置校验失败：\n  - stdio 模式必须设置 MEMOS_ACCESS_TOKEN（服务器用它去连你的 Memos）。\n" +
-        "    如果你想用 http 模式让每个调用方自带钥匙，请设 MEMOS_MCP_TRANSPORT=http。"
+        "    如果你想用 http 模式让本地客户端通过请求头提供 token，请设 MEMOS_MCP_TRANSPORT=http。"
     );
   }
 
