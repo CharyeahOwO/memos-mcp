@@ -22,7 +22,8 @@ ENV NODE_ENV=production \
     MEMOS_MCP_HOST=0.0.0.0 \
     MEMOS_MCP_PORT=8080
 
-RUN addgroup -S memos-mcp && adduser -S memos-mcp -G memos-mcp
+RUN addgroup -S -g 10001 memos-mcp \
+  && adduser -S -D -H -u 10001 -G memos-mcp memos-mcp
 
 COPY --from=build --chown=memos-mcp:memos-mcp /app/package.json ./package.json
 COPY --from=build --chown=memos-mcp:memos-mcp /app/node_modules ./node_modules

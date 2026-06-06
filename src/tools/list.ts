@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { errorMessage, fail, ok, summarizeMemo } from "./format.js";
 import type { ToolDefinition, ToolDeps } from "./types.js";
+import { readOnlyTool } from "./annotations.js";
 
 const inputSchema = {
   pageSize: z
@@ -18,7 +19,8 @@ export function createListTool(deps: ToolDeps): ToolDefinition {
     name: "memos_list",
     title: "列出最近的笔记",
     description:
-      "列出 Memos 中最近的笔记（按创建时间倒序）。可指定 pageSize 和 pageToken 翻页。",
+      "列出 Memos 中最近创建的笔记。适用于用户想浏览最近记录、查看最新 memo，且没有明确搜索词、日期或标签时。",
+    annotations: readOnlyTool("列出最近的笔记"),
     inputSchema,
     isWrite: false,
     handler: async (args, extra) => {

@@ -12,9 +12,6 @@ export class EmbeddingClient {
   private readonly model: string;
 
   constructor(config: AppConfig) {
-    if (!config.embeddingBaseUrl || !config.embeddingModel) {
-      throw new MemosApiError("语义搜索未配置 embedding base URL 或 model");
-    }
     const baseUrl = config.embeddingBaseUrl.replace(/\/+$/, "");
     this.endpoint = baseUrl.endsWith("/embeddings")
       ? baseUrl

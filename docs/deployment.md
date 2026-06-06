@@ -1,54 +1,74 @@
 # Deployment
 
-memos-mcp is intended for local/private deployment only. Keep HTTP bound to `127.0.0.1` unless you explicitly need LAN access.
+memos-mcp runs as one local semantic retrieval service: Memos API access, a local JSON vector index, and an OpenAI-compatible embedding endpoint.
 
 ## Native HTTP Service
 
 ```bash
 npm ci
-npm run verify
-set MEMOS_BASE_URL=http://127.0.0.1:5230
-set MEMOS_MCP_TRANSPORT=http
-set MEMOS_MCP_HOST=127.0.0.1
-set MEMOS_MCP_PORT=8080
-npm run start
+cp .env.example .env
+npm run build
+```
+
+Set at least these values in `.env`:
+
+```env
+MEMOS_BASE_URL=http://127.0.0.1:5230
+MEMOS_MCP_TRANSPORT=http
+MEMOS_MCP_HOST=127.0.0.1
+MEMOS_MCP_PORT=8080
+MEMOS_MCP_INDEX_DB=./data/memos-mcp-index.json
+MEMOS_MCP_EMBEDDING_PROVIDER=openai-compatible
+MEMOS_MCP_EMBEDDING_BASE_URL=http://127.0.0.1:11434/v1
+MEMOS_MCP_EMBEDDING_MODEL=nomic-embed-text
+```
+
+```bash
+node --env-file=.env dist/index.js
 ```
 
 Endpoint: `http://127.0.0.1:8080/mcp`
 
 Health check: `http://127.0.0.1:8080/healthz`
 
+HTTP MCP clients must send `Authorization: Bearer <Memos token>` on requests to `/mcp`.
+
 ## Docker Compose
 
-The README includes a copyable Compose service. Keep host port publishing on `127.0.0.1`.
+The README includes a copyable Compose service. The repository also includes `docker-compose.example.yml`.
 
-The repository also includes `docker-compose.example.yml` for users who prefer a file-based starting point.
+The image runs as UID/GID `10001:10001`. Named volumes work without extra setup. If `MEMOS_MCP_INDEX_DB` points into a bind mount, make the host directory writable by that UID/GID:
+
+```bash
+mkdir -p /tmp/memos-mcp-data
+sudo chown -R 10001:10001 /tmp/memos-mcp-data
+```
 
 ## systemd
 
-The README includes a copyable unit file and environment file. Use `journalctl -u memos-mcp` for logs.
+The README includes a copyable unit file and environment file. Put the vector index somewhere writable by the service user, for example `/var/lib/memos-mcp/memos-mcp-index.json`.
+
+Use `journalctl -u memos-mcp` for logs.
 
 ## pm2
 
-The README includes a copyable pm2 config. Keep secrets out of committed pm2 files.
+The README includes a copyable pm2 config. Keep `MEMOS_MCP_INDEX_DB` under a writable local path and keep API keys out of committed pm2 files.
 
 ## Reverse Proxy
 
-Only use a reverse proxy for LAN/private access.
+Only put a reverse proxy in front of the HTTP transport when the MCP client cannot connect to localhost directly.
 
 - Terminate TLS if traffic leaves localhost.
 - Require authentication at the proxy.
 - Preserve the MCP client's `Authorization` header.
 - Route `/mcp` and `/healthz` to the local service.
 
-## Data
+## Runtime Data
 
-Base profile does not persist data.
-
-Semantic profile stores the local JSON vector index at `MEMOS_MCP_INDEX_DB`, defaulting to:
+The local vector index defaults to:
 
 ```text
 ./data/memos-mcp-index.json
 ```
 
-Use separate index paths for separate Memos accounts.
+Use separate index paths for separate Memos accounts or embedding models.

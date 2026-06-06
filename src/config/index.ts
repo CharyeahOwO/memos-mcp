@@ -15,7 +15,7 @@ export type Transport = (typeof TRANSPORTS)[number];
 export const VISIBILITIES = ["PRIVATE", "PROTECTED", "PUBLIC"] as const;
 export type Visibility = (typeof VISIBILITIES)[number];
 
-export const EMBEDDING_PROVIDERS = ["disabled", "openai-compatible"] as const;
+export const EMBEDDING_PROVIDERS = ["openai-compatible"] as const;
 export type EmbeddingProvider = (typeof EMBEDDING_PROVIDERS)[number];
 
 /** 把 "true"/"false"/"1"/"0" 等字符串解析成布尔值 */
@@ -64,20 +64,24 @@ const RawConfigSchema = z.object({
 
   MEMOS_MCP_ENABLE_UPDATE_TOOLS: booleanFromString(false),
 
-  MEMOS_MCP_ENABLE_SEMANTIC_SEARCH: booleanFromString(false),
-
   MEMOS_MCP_INDEX_DB: z.string().default("./data/memos-mcp-index.json"),
 
-  MEMOS_MCP_EMBEDDING_PROVIDER: z.enum(EMBEDDING_PROVIDERS).default("disabled"),
+  MEMOS_MCP_EMBEDDING_PROVIDER: z.enum(EMBEDDING_PROVIDERS).default("openai-compatible"),
 
   MEMOS_MCP_EMBEDDING_BASE_URL: z
-    .string()
-    .optional()
+    .string({
+      required_error: "缺少 MEMOS_MCP_EMBEDDING_BASE_URL（OpenAI-compatible embeddings 地址）",
+    })
+    .url("MEMOS_MCP_EMBEDDING_BASE_URL 必须是合法 URL，例如 http://127.0.0.1:11434/v1")
     .transform((value) => value?.replace(/\/+$/, "")),
 
   MEMOS_MCP_EMBEDDING_API_KEY: z.string().optional(),
 
-  MEMOS_MCP_EMBEDDING_MODEL: z.string().optional(),
+  MEMOS_MCP_EMBEDDING_MODEL: z
+    .string({
+      required_error: "缺少 MEMOS_MCP_EMBEDDING_MODEL",
+    })
+    .min(1, "MEMOS_MCP_EMBEDDING_MODEL 不能为空"),
 
   MEMOS_MCP_EMBEDDING_BATCH_SIZE: z
     .string()
@@ -122,12 +126,11 @@ export interface AppConfig {
   port: number;
   readonly: boolean;
   enableUpdateTools: boolean;
-  enableSemanticSearch: boolean;
   indexDb: string;
   embeddingProvider: EmbeddingProvider;
-  embeddingBaseUrl: string | undefined;
+  embeddingBaseUrl: string;
   embeddingApiKey: string | undefined;
-  embeddingModel: string | undefined;
+  embeddingModel: string;
   embeddingBatchSize: number;
   timezone: string;
   memosApiVersion: string | undefined;
@@ -163,36 +166,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     );
   }
 
-  if (raw.MEMOS_MCP_ENABLE_SEMANTIC_SEARCH) {
-    if (raw.MEMOS_MCP_EMBEDDING_PROVIDER === "disabled") {
-      throw new ConfigError(
-        "配置校验失败：\n  - 启用语义搜索时 MEMOS_MCP_EMBEDDING_PROVIDER 不能是 disabled。"
-      );
-    }
-    if (!raw.MEMOS_MCP_EMBEDDING_BASE_URL) {
-      throw new ConfigError(
-        "配置校验失败：\n  - 启用语义搜索时必须设置 MEMOS_MCP_EMBEDDING_BASE_URL（OpenAI-compatible embeddings 地址）。"
-      );
-    }
-    try {
-      new URL(raw.MEMOS_MCP_EMBEDDING_BASE_URL);
-    } catch {
-      throw new ConfigError(
-        "配置校验失败：\n  - MEMOS_MCP_EMBEDDING_BASE_URL 必须是合法 URL，例如 http://127.0.0.1:11434/v1。"
-      );
-    }
-    if (!raw.MEMOS_MCP_EMBEDDING_MODEL) {
-      throw new ConfigError(
-        "配置校验失败：\n  - 启用语义搜索时必须设置 MEMOS_MCP_EMBEDDING_MODEL。"
-      );
-    }
-    if (!raw.MEMOS_MCP_INDEX_DB) {
-      throw new ConfigError(
-        "配置校验失败：\n  - 启用语义搜索时必须设置 MEMOS_MCP_INDEX_DB。"
-      );
-    }
-  }
-
   return {
     memosBaseUrl: raw.MEMOS_BASE_URL,
     memosAccessToken: raw.MEMOS_ACCESS_TOKEN,
@@ -201,7 +174,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     port: raw.MEMOS_MCP_PORT,
     readonly: raw.MEMOS_MCP_READONLY,
     enableUpdateTools: raw.MEMOS_MCP_ENABLE_UPDATE_TOOLS,
-    enableSemanticSearch: raw.MEMOS_MCP_ENABLE_SEMANTIC_SEARCH,
     indexDb: raw.MEMOS_MCP_INDEX_DB,
     embeddingProvider: raw.MEMOS_MCP_EMBEDDING_PROVIDER,
     embeddingBaseUrl: raw.MEMOS_MCP_EMBEDDING_BASE_URL,

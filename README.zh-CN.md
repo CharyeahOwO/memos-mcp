@@ -5,113 +5,62 @@
 [![CI](https://github.com/CharyeahOwO/memos-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/CharyeahOwO/memos-mcp/actions/workflows/ci.yml)
 [![Docker Image](https://github.com/CharyeahOwO/memos-mcp/actions/workflows/docker-image.yml/badge.svg)](https://github.com/CharyeahOwO/memos-mcp/actions/workflows/docker-image.yml)
 
-面向 [Memos](https://github.com/usememos/memos) 的 MCP 服务器。AI 客户端可以通过 Model Context Protocol 读取、搜索和写入你的 Memos 实例。
+Memos-mcp 为 Memos 增加全文搜索、向量索引、语义检索和 MCP 工具调用能力，让你的 Memos 变成 AI Agent 可读取的长期记忆库。
 
-适合这些场景：
+memos-mcp 是一个轻量级的 Memos 语义检索层。它会把 Memos 内容同步到本地向量索引，提供关键词搜索和语义搜索，并通过 MCP 暴露给 AI Agent 使用，让你的个人记录可以被安全、可控地检索和调用。
 
-- 让 AI 按关键词、日期、标签或语义相似度搜索 memo。
-- 读取最近 memo，或按 id 获取指定 memo。
-- 创建 memo，并显式选择 `PRIVATE`、`PROTECTED` 或 `PUBLIC`。
-- 在开启写工具后更新或归档 memo。
+## 能力
 
-## 范围
-
-| 能力 | 状态 |
+| 能力 | 说明 |
 | --- | --- |
-| 列表、详情、关键词搜索 | 支持 |
-| 日期范围、单日、那年今日 | 支持 |
-| 标签和资源聚合 | 支持 |
-| 创建 memo | 支持，必须显式传 visibility |
-| 更新和归档 memo | 支持，需开启 |
-| 语义搜索 | 支持，需开启本地向量索引 |
-| 删除 memo | 未实现 |
-| Memos 管理员 / 用户管理 | 未实现 |
-| 资源上传 | 未实现 |
+| 本地向量索引 | 将 memo embedding 存在 `MEMOS_MCP_INDEX_DB` 指向的本地 JSON 索引。 |
+| 语义搜索 | `memos_search` 默认基于本地向量索引做语义检索。 |
+| 关键词搜索 | `memos_search` 传 `mode: "keyword"` 时使用 Memos 关键词过滤。 |
+| 时间检索 | 支持单日、日期范围、那年今日。 |
+| 标签和资源 | 从 memo 分页结果中聚合标签和附件资源。 |
+| 安全写入 | `memos_create` 必须显式传 `PRIVATE`、`PROTECTED` 或 `PUBLIC`。 |
+| 更新控制 | `memos_update` 和 `memos_archive` 需要显式开启才会注册。 |
+| MCP 传输 | 支持 stdio 和 Streamable HTTP。 |
+
+支持的客户端包括 Claude Desktop、Cursor、VS Code Copilot MCP、Codex CLI、Hermes Agent、OpenClaw，以及支持 stdio 或 Streamable HTTP 的 MCP 客户端。
 
 ## 前置条件
 
-| 项目 | 版本 / 说明 |
+| 项目 | 说明 |
 | --- | --- |
 | Node.js | 20 或更新 |
 | Memos | 建议 v0.24+ |
-| Memos token | Personal Access Token，示例里写作 `memos_pat_xxxxxxxx` |
-| Embedding API | 只有语义搜索需要，必须兼容 OpenAI embeddings API |
+| Memos PAT | stdio 使用 `MEMOS_ACCESS_TOKEN`，HTTP 使用 `Authorization: Bearer <Memos token>` |
+| Embedding API | OpenAI-compatible `/v1/embeddings` endpoint |
 
-## 选择接入方式
-
-| 方式 | 适合 | 传输 | 本地数据 |
-| --- | --- | --- | --- |
-| 客户端启动 stdio | Claude Desktop、Cursor、VS Code、Codex | `stdio` | 无 |
-| 本地 HTTP 服务 | Hermes、OpenClaw、自定义 MCP 客户端 | Streamable HTTP | 无 |
-| 语义搜索形态 | 需要更好的历史 memo 召回 | `stdio` 或 HTTP | JSON 向量索引 |
-
-已给出配置示例：
-
-| 客户端 / 运行方式 | 是否包含示例 |
-| --- | --- |
-| Claude Desktop | 是 |
-| Cursor | 是 |
-| VS Code Copilot MCP | 是 |
-| Codex CLI | 是 |
-| Hermes Agent | 是 |
-| OpenClaw | 是 |
-| 通用 Streamable HTTP | 是 |
-| systemd / pm2 | 服务部署 |
-| Docker Compose | 服务部署 |
+embedding endpoint 是必需配置。`memos_search` 默认语义搜索，所以正式检索前需要先调用 `memos_sync_index` 建索引。
 
 ## 架构
 
 ```mermaid
 flowchart LR
-  subgraph Clients["MCP 客户端"]
-    StdioClients["Claude / Cursor / VS Code / Codex"]
-    HttpClients["Hermes / OpenClaw / HTTP 客户端"]
-  end
+  Agent["AI Agent / MCP 客户端"] --> Transport["stdio 或 Streamable HTTP"]
+  Transport --> Tools["memos-mcp 工具"]
 
-  subgraph Server["memos-mcp"]
-    Transport["stdio 或 Streamable HTTP"]
-    Registry["工具注册表"]
-    Gate["权限网关"]
-    Auth["Token 解析器"]
-    Api["Memos REST 客户端"]
-    Normalize["Memo 标准化"]
-    Search["搜索路由"]
-    Indexer["语义索引器"]
-  end
+  Tools --> Auth["Memos token 解析"]
+  Auth --> MemosApi["Memos REST 客户端"]
+  MemosApi --> Memos["Memos API"]
 
-  subgraph Data["本地数据"]
-    Index["JSON 向量索引"]
-  end
+  Tools --> Sync["memos_sync_index"]
+  Sync --> MemosApi
+  Sync --> Embed["OpenAI-compatible embeddings"]
+  Sync --> Index["本地 JSON 向量索引"]
 
-  subgraph External["外部服务"]
-    Memos["Memos API"]
-    Embed["Embedding API"]
-  end
-
-  StdioClients -->|环境变量 token| Transport
-  HttpClients -->|Authorization 请求头| Transport
-  Transport --> Registry --> Gate --> Auth --> Api --> Memos
-  Api --> Normalize --> Registry
-  Registry --> Search
-  Search -->|关键词模式| Api
-  Search -->|语义模式| Index
-  Registry -->|memos_sync_index| Indexer
-  Indexer --> Api
-  Indexer --> Embed
-  Indexer --> Index
+  Tools --> Search["memos_search"]
+  Search -->|默认语义模式| Index
+  Search -->|关键词模式| MemosApi
 ```
 
-关键行为：
+运行模型只有一个：本地 MCP 服务加本地向量索引。stdio 和 HTTP 只是 MCP 客户端连接同一个服务的传输方式。
 
-| 部分 | 行为 |
-| --- | --- |
-| `stdio` 鉴权 | token 来自 `MEMOS_ACCESS_TOKEN`。 |
-| HTTP 鉴权 | token 来自每次请求的 `Authorization: Bearer ...` 请求头。 |
-| 权限网关 | 只读模式会把写工具从 `tools/list` 隐藏。 |
-| 语义索引 | `memos_sync_index` 读取 memo、调用 embedding、写入 `MEMOS_MCP_INDEX_DB`。 |
-| 搜索路由 | 只有开启语义搜索后，`memos_search` 默认才走语义模式。 |
+## 部署
 
-## 安装
+### 1. 安装
 
 ```bash
 git clone https://github.com/CharyeahOwO/memos-mcp.git
@@ -121,80 +70,57 @@ cp .env.example .env
 npm run build
 ```
 
-stdio 最小 `.env`：
+### 2. 配置
+
+最小 `.env`：
 
 ```env
 MEMOS_BASE_URL=https://memos.example.com
-MEMOS_ACCESS_TOKEN=memos_pat_xxxxxxxx
+MEMOS_ACCESS_TOKEN=memos_pat_xxxx
 MEMOS_MCP_TRANSPORT=stdio
+
+MEMOS_MCP_INDEX_DB=./data/memos-mcp-index.json
+MEMOS_MCP_EMBEDDING_PROVIDER=openai-compatible
+MEMOS_MCP_EMBEDDING_BASE_URL=https://api.example.com/v1
+MEMOS_MCP_EMBEDDING_MODEL=BAAI/bge-m3
+MEMOS_MCP_EMBEDDING_API_KEY=sk_xxxx
+MEMOS_MCP_EMBEDDING_BATCH_SIZE=32
 ```
 
-构建验证：
+embedding base URL 需要支持 OpenAI-compatible embedding 请求。例如 `MEMOS_MCP_EMBEDDING_BASE_URL=https://api.example.com/v1` 时，memos-mcp 会调用 `https://api.example.com/v1/embeddings`。
+
+### 3. 运行
+
+MCP 客户端直接启动服务进程时使用 stdio：
 
 ```bash
-npm run verify
+node --env-file=.env dist/index.js
 ```
 
-## 部署
-
-### 客户端启动 stdio
-
-适合由 MCP 客户端直接启动服务进程。
+MCP 客户端连接本地 endpoint 时使用 Streamable HTTP：
 
 ```bash
-MEMOS_BASE_URL=https://memos.example.com \
-MEMOS_ACCESS_TOKEN=memos_pat_xxxxxxxx \
-MEMOS_MCP_TRANSPORT=stdio \
-node dist/index.js
-```
-
-客户端配置里应使用 `dist/index.js` 的绝对路径。
-
-### 本地 HTTP 服务
-
-适合需要 HTTP endpoint 的 MCP 客户端。
-
-```bash
-MEMOS_BASE_URL=https://memos.example.com \
 MEMOS_MCP_TRANSPORT=http \
 MEMOS_MCP_HOST=127.0.0.1 \
 MEMOS_MCP_PORT=8080 \
-node dist/index.js
+node --env-file=.env dist/index.js
 ```
 
-Endpoint：
+HTTP endpoint：
 
 ```text
 http://127.0.0.1:8080/mcp
 ```
 
-健康检查：
-
-```text
-http://127.0.0.1:8080/healthz
-```
-
-HTTP 客户端必须发送 Memos token：
+HTTP 客户端必须发送：
 
 ```http
-Authorization: Bearer memos_pat_xxxxxxxx
+Authorization: Bearer <Memos token>
 ```
 
-### 语义搜索形态
+### 4. 同步索引
 
-在 stdio 或 HTTP 部署上增加这些变量：
-
-```env
-MEMOS_MCP_ENABLE_SEMANTIC_SEARCH=true
-MEMOS_MCP_INDEX_DB=./data/memos-mcp-index.json
-MEMOS_MCP_EMBEDDING_PROVIDER=openai-compatible
-MEMOS_MCP_EMBEDDING_BASE_URL=https://api.example.com/v1
-MEMOS_MCP_EMBEDDING_MODEL=BAAI/bge-m3
-MEMOS_MCP_EMBEDDING_API_KEY=sk_xxxxxxxx
-MEMOS_MCP_EMBEDDING_BATCH_SIZE=32
-```
-
-然后从 MCP 客户端调用：
+连接 MCP 客户端后调用：
 
 ```text
 memos_sync_index
@@ -202,13 +128,16 @@ memos_index_status
 memos_search {"query":"your query"}
 ```
 
-说明：
+关键词搜索仍可使用：
 
-- `memos_sync_index` 会把 memo 文本发送给配置的 embedding API。
-- 不同 Memos 账号或不同 embedding model 不应共用同一个索引文件。
-- `memos_search` 传 `mode: "keyword"` 可以强制走关键词搜索。
+```json
+{
+  "query": "project note",
+  "mode": "keyword"
+}
+```
 
-### Docker Compose
+## Docker Compose
 
 ```yaml
 services:
@@ -222,8 +151,12 @@ services:
       MEMOS_MCP_PORT: 8080
       MEMOS_MCP_READONLY: "false"
       MEMOS_MCP_ENABLE_UPDATE_TOOLS: "false"
-      MEMOS_MCP_ENABLE_SEMANTIC_SEARCH: "false"
       MEMOS_MCP_INDEX_DB: /data/memos-mcp-index.json
+      MEMOS_MCP_EMBEDDING_PROVIDER: openai-compatible
+      MEMOS_MCP_EMBEDDING_BASE_URL: https://api.example.com/v1
+      MEMOS_MCP_EMBEDDING_MODEL: BAAI/bge-m3
+      MEMOS_MCP_EMBEDDING_API_KEY: sk_xxxx
+      MEMOS_MCP_EMBEDDING_BATCH_SIZE: "32"
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
@@ -235,9 +168,21 @@ volumes:
   memos-mcp-data:
 ```
 
-如果在 Docker 中开启语义搜索，把语义搜索形态里的 embedding 变量加到 `environment`。
+容器内进程使用 UID/GID `10001:10001`。named volume 不需要额外处理。使用 `/data` bind mount 时，宿主机目录必须允许该 UID/GID 写入：
 
-### systemd
+```bash
+mkdir -p /tmp/memos-mcp-data
+sudo chown -R 10001:10001 /tmp/memos-mcp-data
+```
+
+bind mount 形态：
+
+```yaml
+volumes:
+  - /tmp/memos-mcp-data:/data
+```
+
+## systemd
 
 创建 `/etc/memos-mcp/memos-mcp.env`：
 
@@ -246,8 +191,11 @@ MEMOS_BASE_URL=http://127.0.0.1:5230
 MEMOS_MCP_TRANSPORT=http
 MEMOS_MCP_HOST=127.0.0.1
 MEMOS_MCP_PORT=8080
-MEMOS_MCP_READONLY=false
-MEMOS_MCP_ENABLE_UPDATE_TOOLS=false
+MEMOS_MCP_INDEX_DB=/var/lib/memos-mcp/memos-mcp-index.json
+MEMOS_MCP_EMBEDDING_PROVIDER=openai-compatible
+MEMOS_MCP_EMBEDDING_BASE_URL=https://api.example.com/v1
+MEMOS_MCP_EMBEDDING_MODEL=BAAI/bge-m3
+MEMOS_MCP_EMBEDDING_API_KEY=sk_xxxx
 ```
 
 创建 `/etc/systemd/system/memos-mcp.service`：
@@ -277,7 +225,7 @@ sudo systemctl enable --now memos-mcp
 journalctl -u memos-mcp -f
 ```
 
-### pm2
+## pm2
 
 ```js
 module.exports = {
@@ -289,7 +237,12 @@ module.exports = {
         MEMOS_BASE_URL: "http://127.0.0.1:5230",
         MEMOS_MCP_TRANSPORT: "http",
         MEMOS_MCP_HOST: "127.0.0.1",
-        MEMOS_MCP_PORT: "8080"
+        MEMOS_MCP_PORT: "8080",
+        MEMOS_MCP_INDEX_DB: "./data/memos-mcp-index.json",
+        MEMOS_MCP_EMBEDDING_PROVIDER: "openai-compatible",
+        MEMOS_MCP_EMBEDDING_BASE_URL: "https://api.example.com/v1",
+        MEMOS_MCP_EMBEDDING_MODEL: "BAAI/bge-m3",
+        MEMOS_MCP_EMBEDDING_API_KEY: "sk_xxxx"
       }
     }
   ]
@@ -301,25 +254,7 @@ pm2 start ecosystem.config.cjs
 pm2 save
 ```
 
-### 反向代理
-
-如果代理 HTTP 模式，必须保留 `Authorization` 请求头。
-
-```nginx
-location /mcp {
-  proxy_pass http://127.0.0.1:8080/mcp;
-  proxy_set_header Authorization $http_authorization;
-  proxy_set_header Host $host;
-}
-
-location /healthz {
-  proxy_pass http://127.0.0.1:8080/healthz;
-}
-```
-
 ## 客户端配置
-
-把 `/absolute/path/to/memos-mcp` 换成你的本地路径。
 
 ### Claude Desktop / Cursor
 
@@ -331,7 +266,12 @@ location /healthz {
       "args": ["/absolute/path/to/memos-mcp/dist/index.js"],
       "env": {
         "MEMOS_BASE_URL": "https://memos.example.com",
-        "MEMOS_ACCESS_TOKEN": "memos_pat_xxxxxxxx"
+        "MEMOS_ACCESS_TOKEN": "memos_pat_xxxx",
+        "MEMOS_MCP_INDEX_DB": "./data/memos-mcp-index.json",
+        "MEMOS_MCP_EMBEDDING_PROVIDER": "openai-compatible",
+        "MEMOS_MCP_EMBEDDING_BASE_URL": "https://api.example.com/v1",
+        "MEMOS_MCP_EMBEDDING_MODEL": "BAAI/bge-m3",
+        "MEMOS_MCP_EMBEDDING_API_KEY": "sk_xxxx"
       }
     }
   }
@@ -349,7 +289,12 @@ location /healthz {
       "args": ["/absolute/path/to/memos-mcp/dist/index.js"],
       "env": {
         "MEMOS_BASE_URL": "https://memos.example.com",
-        "MEMOS_ACCESS_TOKEN": "memos_pat_xxxxxxxx"
+        "MEMOS_ACCESS_TOKEN": "memos_pat_xxxx",
+        "MEMOS_MCP_INDEX_DB": "./data/memos-mcp-index.json",
+        "MEMOS_MCP_EMBEDDING_PROVIDER": "openai-compatible",
+        "MEMOS_MCP_EMBEDDING_BASE_URL": "https://api.example.com/v1",
+        "MEMOS_MCP_EMBEDDING_MODEL": "BAAI/bge-m3",
+        "MEMOS_MCP_EMBEDDING_API_KEY": "sk_xxxx"
       }
     }
   }
@@ -365,7 +310,12 @@ args = ["/absolute/path/to/memos-mcp/dist/index.js"]
 
 [mcp_servers.memos.env]
 MEMOS_BASE_URL = "https://memos.example.com"
-MEMOS_ACCESS_TOKEN = "memos_pat_xxxxxxxx"
+MEMOS_ACCESS_TOKEN = "memos_pat_xxxx"
+MEMOS_MCP_INDEX_DB = "./data/memos-mcp-index.json"
+MEMOS_MCP_EMBEDDING_PROVIDER = "openai-compatible"
+MEMOS_MCP_EMBEDDING_BASE_URL = "https://api.example.com/v1"
+MEMOS_MCP_EMBEDDING_MODEL = "BAAI/bge-m3"
+MEMOS_MCP_EMBEDDING_API_KEY = "sk_xxxx"
 ```
 
 ### 通用 Streamable HTTP
@@ -377,7 +327,7 @@ MEMOS_ACCESS_TOKEN = "memos_pat_xxxxxxxx"
       "type": "streamable-http",
       "url": "http://127.0.0.1:8080/mcp",
       "headers": {
-        "Authorization": "Bearer memos_pat_xxxxxxxx"
+        "Authorization": "Bearer memos_pat_xxxx"
       }
     }
   }
@@ -391,7 +341,7 @@ mcp_servers:
   memos:
     url: "http://127.0.0.1:8080/mcp"
     headers:
-      Authorization: "Bearer memos_pat_xxxxxxxx"
+      Authorization: "Bearer memos_pat_xxxx"
     connect_timeout: 10
     timeout: 60
     enabled: true
@@ -407,88 +357,63 @@ mcp:
       transport: "streamable-http"
       connectionTimeoutMs: 10000
       headers:
-        Authorization: "Bearer memos_pat_xxxxxxxx"
+        Authorization: "Bearer memos_pat_xxxx"
 ```
 
-CLI 形式：
+CLI 形态：
 
 ```bash
-openclaw mcp set memos '{"url":"http://127.0.0.1:8080/mcp","transport":"streamable-http","headers":{"Authorization":"Bearer memos_pat_xxxxxxxx"}}'
+openclaw mcp set memos '{"url":"http://127.0.0.1:8080/mcp","transport":"streamable-http","headers":{"Authorization":"Bearer memos_pat_xxxx"}}'
 ```
 
 ## 工具
 
-| 工具 | 类型 | 可用条件 |
+| 工具 | 类型 | 说明 |
 | --- | --- | --- |
-| `memos_list` | 读 | 默认 |
-| `memos_get` | 读 | 默认 |
-| `memos_search` | 读 | 默认关键词，开启语义后默认语义 |
-| `memos_get_day` | 读 | 默认 |
-| `memos_get_range` | 读 | 默认 |
-| `memos_on_this_day` | 读 | 默认 |
-| `memos_get_by_tag` | 读 | 默认 |
-| `tags_list` | 读 | 默认 |
-| `resources_list` | 读 | 默认 |
-| `memos_create` | 写 | `MEMOS_MCP_READONLY=true` 时隐藏 |
-| `memos_update` | 写 | 需要 `MEMOS_MCP_ENABLE_UPDATE_TOOLS=true` |
-| `memos_archive` | 写 | 需要 `MEMOS_MCP_ENABLE_UPDATE_TOOLS=true` |
-| `memos_sync_index` | 读 | 需要 `MEMOS_MCP_ENABLE_SEMANTIC_SEARCH=true` |
-| `memos_index_status` | 读 | 需要 `MEMOS_MCP_ENABLE_SEMANTIC_SEARCH=true` |
+| `memos_list` | 读 | 列出最近 memo。 |
+| `memos_get` | 读 | 按 id 或 `memos/{id}` 获取 memo。 |
+| `memos_search` | 读 | 默认语义搜索，传 `mode: "keyword"` 时关键词搜索。 |
+| `memos_get_day` | 读 | 查询某个日历日的 memo。 |
+| `memos_get_range` | 读 | 查询日期范围内的 memo。 |
+| `memos_on_this_day` | 读 | 查询历史同月同日 memo。 |
+| `memos_get_by_tag` | 读 | 按标签查询 memo。 |
+| `tags_list` | 读 | 从 memo 分页结果聚合标签。 |
+| `resources_list` | 读 | 从 memo 分页结果聚合附件资源。 |
+| `memos_create` | 写 | 创建 memo，需要显式 visibility。 |
+| `memos_update` | 写 | 需要 `MEMOS_MCP_ENABLE_UPDATE_TOOLS=true`。 |
+| `memos_archive` | 写 | 需要 `MEMOS_MCP_ENABLE_UPDATE_TOOLS=true`。 |
+| `memos_sync_index` | 读 | 将 Memos 内容同步到本地向量索引。 |
+| `memos_index_status` | 读 | 查看索引状态、数量、维度、模型和路径。 |
 
 ## 配置
 
 | 变量 | 默认值 | 是否必填 | 说明 |
 | --- | --- | --- | --- |
-| `MEMOS_BASE_URL` | 无 | 是 | Memos 实例地址 |
-| `MEMOS_ACCESS_TOKEN` | 无 | 仅 stdio 必填 | stdio 模式使用的 Memos PAT |
-| `MEMOS_MCP_TRANSPORT` | `stdio` | 否 | `stdio` 或 `http` |
-| `MEMOS_MCP_HOST` | `127.0.0.1` | 否 | HTTP 绑定地址 |
-| `MEMOS_MCP_PORT` | `8080` | 否 | HTTP 端口 |
-| `MEMOS_MCP_READONLY` | `false` | 否 | 隐藏写工具 |
-| `MEMOS_MCP_ENABLE_UPDATE_TOOLS` | `false` | 否 | 启用 update/archive |
-| `MEMOS_MCP_TIMEZONE` | `UTC` | 否 | 日期工具使用的 IANA 时区 |
-| `MEMOS_MCP_ENABLE_SEMANTIC_SEARCH` | `false` | 否 | 启用语义工具，并让搜索默认语义 |
-| `MEMOS_MCP_INDEX_DB` | `./data/memos-mcp-index.json` | 仅语义搜索 | 本地 JSON 向量索引路径 |
-| `MEMOS_MCP_EMBEDDING_PROVIDER` | `disabled` | 仅语义搜索 | `disabled` 或 `openai-compatible` |
-| `MEMOS_MCP_EMBEDDING_BASE_URL` | 无 | 仅语义搜索 | OpenAI-compatible base URL |
-| `MEMOS_MCP_EMBEDDING_MODEL` | 无 | 仅语义搜索 | embedding 模型 |
-| `MEMOS_MCP_EMBEDDING_API_KEY` | 无 | 否 | embedding API key |
-| `MEMOS_MCP_EMBEDDING_BATCH_SIZE` | `32` | 否 | 1-128 |
-
-## 验证
-
-```bash
-npm run verify
-npm run smoke:http
-```
-
-真实 Memos API 读测试：
-
-```bash
-MEMOS_BASE_URL=https://memos.example.com \
-MEMOS_ACCESS_TOKEN=memos_pat_xxxxxxxx \
-npm run smoke:memos
-```
-
-真实 Memos API 写测试：
-
-```bash
-MEMOS_BASE_URL=https://memos.example.com \
-MEMOS_ACCESS_TOKEN=memos_pat_xxxxxxxx \
-MEMOS_MCP_SMOKE_WRITE=true \
-npm run smoke:memos
-```
+| `MEMOS_BASE_URL` | 无 | 是 | Memos 实例地址。 |
+| `MEMOS_ACCESS_TOKEN` | 无 | 仅 stdio 必填 | stdio 模式使用的 Memos PAT。 |
+| `MEMOS_MCP_TRANSPORT` | `stdio` | 否 | `stdio` 或 `http`。 |
+| `MEMOS_MCP_HOST` | `127.0.0.1` | 否 | HTTP 绑定地址。 |
+| `MEMOS_MCP_PORT` | `8080` | 否 | HTTP 端口。 |
+| `MEMOS_MCP_READONLY` | `false` | 否 | 隐藏所有写工具。 |
+| `MEMOS_MCP_ENABLE_UPDATE_TOOLS` | `false` | 否 | 注册 `memos_update` 和 `memos_archive`。 |
+| `MEMOS_MCP_TIMEZONE` | `UTC` | 否 | 日期工具使用的 IANA 时区。 |
+| `MEMOS_MCP_INDEX_DB` | `./data/memos-mcp-index.json` | 否 | 本地 JSON 向量索引路径。 |
+| `MEMOS_MCP_EMBEDDING_PROVIDER` | `openai-compatible` | 否 | embedding provider。 |
+| `MEMOS_MCP_EMBEDDING_BASE_URL` | 无 | 是 | OpenAI-compatible base URL，通常以 `/v1` 结尾。 |
+| `MEMOS_MCP_EMBEDDING_MODEL` | 无 | 是 | embedding 模型。 |
+| `MEMOS_MCP_EMBEDDING_API_KEY` | 无 | 否 | embedding API key。 |
+| `MEMOS_MCP_EMBEDDING_BATCH_SIZE` | `32` | 否 | embedding batch size，范围 1 到 128。 |
 
 ## 排错
 
 | 现象 | 检查项 |
 | --- | --- |
-| 客户端无法启动 stdio server | 使用 `dist/index.js` 绝对路径，并先运行 `npm run build`。 |
-| HTTP 客户端鉴权失败 | 每次 MCP 请求都发送 `Authorization: Bearer memos_pat_xxxxxxxx`。 |
-| `memos_search` 提示索引为空 | 先调用 `memos_sync_index`。 |
-| 语义搜索结果太旧 | memo 变更后重新调用 `memos_sync_index`。 |
+| 启动时报 embedding 配置错误 | 设置 `MEMOS_MCP_EMBEDDING_BASE_URL` 和 `MEMOS_MCP_EMBEDDING_MODEL`。 |
+| HTTP 客户端鉴权失败 | 每次 MCP 请求都发送 `Authorization: Bearer <Memos token>`。 |
+| `memos_search` 提示索引为空 | 先运行 `memos_sync_index`。 |
+| 语义搜索结果过旧 | memo 变更后重新运行 `memos_sync_index`。 |
+| Docker 同步索引时报 `EACCES` | 使用 named volume，或让 bind mount 目录可被 UID/GID `10001:10001` 写入。 |
 | 日期工具结果不符合预期 | 设置 `MEMOS_MCP_TIMEZONE`，例如 `Asia/Shanghai`。 |
-| 写工具看不到 | 检查 `MEMOS_MCP_READONLY` 和 `MEMOS_MCP_ENABLE_UPDATE_TOOLS`。 |
 
 ## 开发
 
@@ -499,6 +424,14 @@ npm test
 npm run build
 npm run validate:repo
 npm run smoke:http
+```
+
+真实 Memos API 测试：
+
+```bash
+MEMOS_BASE_URL=https://memos.example.com \
+MEMOS_ACCESS_TOKEN=memos_pat_xxxx \
+npm run smoke:memos
 ```
 
 ## 更多文档

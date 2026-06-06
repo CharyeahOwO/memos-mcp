@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { errorMessage, fail, ok, summarizeMemo } from "./format.js";
 import type { ToolDefinition, ToolDeps } from "./types.js";
+import { readOnlyTool } from "./annotations.js";
 
 const inputSchema = {
   id: z
@@ -13,7 +14,9 @@ export function createGetTool(deps: ToolDeps): ToolDefinition {
   return {
     name: "memos_get",
     title: "获取单条笔记",
-    description: "按 id 或资源名（memos/123）获取一条笔记的完整内容。",
+    description:
+      "按 id 或资源名获取一条指定笔记。适用于用户给出 memo id、memos/123 这类资源名，或要求打开某一条搜索结果时。",
+    annotations: readOnlyTool("获取单条笔记"),
     inputSchema,
     isWrite: false,
     handler: async (args, extra) => {

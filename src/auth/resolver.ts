@@ -75,7 +75,7 @@ export class HttpHeaderAuthResolver extends BaseAuthResolver {
     if (!headerValue) {
       throw new AuthError(
         "缺少 Authorization 请求头。请在 MCP 客户端配置里加上 " +
-          'Authorization: Bearer <你的 Memos token>（形如 memos_pat_xxxx）。'
+          "`Authorization: Bearer <Memos token>`（形如 memos_pat_xxxx）。"
       );
     }
 

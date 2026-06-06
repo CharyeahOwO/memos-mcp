@@ -10,6 +10,10 @@ const child = spawn(process.execPath, ["dist/index.js"], {
     MEMOS_MCP_TRANSPORT: "http",
     MEMOS_MCP_HOST: "127.0.0.1",
     MEMOS_MCP_PORT: port,
+    MEMOS_MCP_EMBEDDING_PROVIDER: process.env.MEMOS_MCP_EMBEDDING_PROVIDER ?? "openai-compatible",
+    MEMOS_MCP_EMBEDDING_BASE_URL:
+      process.env.MEMOS_MCP_EMBEDDING_BASE_URL ?? "http://127.0.0.1:11434/v1",
+    MEMOS_MCP_EMBEDDING_MODEL: process.env.MEMOS_MCP_EMBEDDING_MODEL ?? "smoke-embedding",
   },
   stdio: ["ignore", "pipe", "pipe"],
 });

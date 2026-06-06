@@ -2,6 +2,7 @@ import { z } from "zod";
 import { SemanticIndexService } from "../indexer/semantic-index.js";
 import { errorMessage, fail, ok } from "./format.js";
 import type { ToolDefinition, ToolDeps } from "./types.js";
+import { localReadOnlyTool, syncTool } from "./annotations.js";
 
 const pageControlsSchema = {
   pageSize: z
@@ -25,10 +26,10 @@ export function createSyncIndexTool(deps: ToolDeps): ToolDefinition {
     name: "memos_sync_index",
     title: "同步语义索引",
     description:
-      "将 Memos 内容同步到本地语义索引。需要启用 MEMOS_MCP_ENABLE_SEMANTIC_SEARCH 并配置 OpenAI-compatible embeddings。",
+      "将 Memos 内容同步到本地语义索引。适用于首次使用语义搜索、索引为空、搜索结果过旧或用户要求刷新长期记忆时；会写本地索引，不修改 Memos。",
+    annotations: syncTool("同步语义索引"),
     inputSchema: pageControlsSchema,
     isWrite: false,
-    featureFlag: "enableSemanticSearch",
     handler: async (args, extra) => {
       try {
         const pageSize = typeof args.pageSize === "number" ? args.pageSize : 100;
@@ -48,10 +49,11 @@ export function createIndexStatusTool(deps: ToolDeps): ToolDefinition {
   return {
     name: "memos_index_status",
     title: "查看语义索引状态",
-    description: "查看本地语义索引是否启用、是否已同步、索引条数和 embedding 配置。",
+    description:
+      "查看本地语义索引是否已同步、索引条数、向量维度、embedding 模型和索引路径。适用于诊断搜索不可用或确认索引是否就绪。",
+    annotations: localReadOnlyTool("查看语义索引状态"),
     inputSchema: {},
     isWrite: false,
-    featureFlag: "enableSemanticSearch",
     handler: async () => {
       try {
         const service = new SemanticIndexService(deps.config);

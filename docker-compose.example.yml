@@ -13,8 +13,16 @@ services:
       MEMOS_MCP_ENABLE_UPDATE_TOOLS: ${MEMOS_MCP_ENABLE_UPDATE_TOOLS:-false}
       MEMOS_MCP_TIMEZONE: ${MEMOS_MCP_TIMEZONE:-UTC}
       MEMOS_MCP_MEMOS_API_VERSION: ${MEMOS_MCP_MEMOS_API_VERSION:-0.24}
+      MEMOS_MCP_INDEX_DB: ${MEMOS_MCP_INDEX_DB:-/data/memos-mcp-index.json}
+      MEMOS_MCP_EMBEDDING_PROVIDER: ${MEMOS_MCP_EMBEDDING_PROVIDER:-openai-compatible}
+      MEMOS_MCP_EMBEDDING_BASE_URL: ${MEMOS_MCP_EMBEDDING_BASE_URL:-}
+      MEMOS_MCP_EMBEDDING_MODEL: ${MEMOS_MCP_EMBEDDING_MODEL:-}
+      MEMOS_MCP_EMBEDDING_API_KEY: ${MEMOS_MCP_EMBEDDING_API_KEY:-}
+      MEMOS_MCP_EMBEDDING_BATCH_SIZE: ${MEMOS_MCP_EMBEDDING_BATCH_SIZE:-32}
     ports:
       - "127.0.0.1:8080:8080"
+    volumes:
+      - memos-mcp-data:/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
@@ -29,3 +37,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+volumes:
+  memos-mcp-data:

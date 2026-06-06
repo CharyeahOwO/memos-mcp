@@ -62,6 +62,7 @@ export function registerTools(server: McpServer, deps: ToolDeps): string[] {
       {
         title: tool.title,
         description: tool.description,
+        annotations: tool.annotations,
         inputSchema: tool.inputSchema,
       },
       // SDK 把已解析的参数作为第一参数、extra 作为第二参数传入

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { errorMessage, fail, ok, summarizeMemo } from "./format.js";
 import type { ToolDefinition, ToolDeps } from "./types.js";
+import { readOnlyTool } from "./annotations.js";
 
 const pageControls = {
   pageSize: z.number().int().min(1).max(200).optional().describe("每页拉取数量，默认 100，最大 200"),
@@ -37,7 +38,9 @@ export function createGetByTagTool(deps: ToolDeps): ToolDefinition {
   return {
     name: "memos_get_by_tag",
     title: "按标签获取笔记",
-    description: "按标签名获取笔记。标签名可带或不带 #。",
+    description:
+      "按标签名获取笔记。适用于用户指定 #tag、标签名或要求查看某个标签下的 memo；标签名可带或不带 #。",
+    annotations: readOnlyTool("按标签获取笔记"),
     inputSchema: getByTagInputSchema,
     isWrite: false,
     handler: async (args, extra) => {
@@ -65,7 +68,9 @@ export function createTagsListTool(deps: ToolDeps): ToolDefinition {
   return {
     name: "tags_list",
     title: "列出标签",
-    description: "从已拉取的笔记中聚合所有标签及数量。",
+    description:
+      "列出 Memos 中出现过的标签及数量。适用于用户想知道有哪些标签、标签统计或选择标签范围时。",
+    annotations: readOnlyTool("列出标签"),
     inputSchema: tagsListInputSchema,
     isWrite: false,
     handler: async (args, extra) => {

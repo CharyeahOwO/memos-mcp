@@ -2,6 +2,7 @@ import { z } from "zod";
 import { VISIBILITIES } from "../config/index.js";
 import { errorMessage, fail, ok, summarizeMemo } from "./format.js";
 import type { ToolDefinition, ToolDeps } from "./types.js";
+import { updateTool as updateToolAnnotations } from "./annotations.js";
 
 const STATES = ["NORMAL", "ARCHIVED"] as const;
 
@@ -41,7 +42,8 @@ export function createUpdateTool(deps: ToolDeps): ToolDefinition {
     name: "memos_update",
     title: "更新笔记",
     description:
-      "更新一条 Memos 笔记。默认不注册，只有 MEMOS_MCP_ENABLE_UPDATE_TOOLS=true 且非只读模式时可用。",
+      "更新一条已有 Memos 笔记的内容、可见性、置顶或状态。适用于用户明确要求修改某条 memo 时；默认不注册，需开启更新工具。",
+    annotations: updateToolAnnotations("更新笔记"),
     inputSchema: updateInputSchema,
     isWrite: true,
     featureFlag: "enableUpdateTools",
@@ -86,7 +88,8 @@ export function createArchiveTool(deps: ToolDeps): ToolDefinition {
     name: "memos_archive",
     title: "归档笔记",
     description:
-      "将一条 Memos 笔记状态改为 ARCHIVED。默认不注册，只有 MEMOS_MCP_ENABLE_UPDATE_TOOLS=true 且非只读模式时可用。",
+      "将一条已有 Memos 笔记状态改为 ARCHIVED。适用于用户明确要求归档或隐藏某条 memo 时；默认不注册，需开启更新工具。",
+    annotations: updateToolAnnotations("归档笔记"),
     inputSchema: archiveInputSchema,
     isWrite: true,
     featureFlag: "enableUpdateTools",

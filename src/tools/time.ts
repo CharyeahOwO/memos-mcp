@@ -2,6 +2,7 @@ import { z } from "zod";
 import { errorMessage, fail, ok, summarizeMemo } from "./format.js";
 import type { ToolDefinition, ToolDeps } from "./types.js";
 import type { NormalizedMemo } from "../memos/types.js";
+import { readOnlyTool } from "./annotations.js";
 
 const pageControls = {
   pageSize: z.number().int().min(1).max(200).optional().describe("每页拉取数量，默认 100，最大 200"),
@@ -89,7 +90,9 @@ export function createGetDayTool(deps: ToolDeps): ToolDefinition {
   return {
     name: "memos_get_day",
     title: "按日期获取笔记",
-    description: "按指定时区中的一个日历日获取笔记。日期匹配基于 memo 的创建时间。",
+    description:
+      "按指定时区中的一个日历日获取笔记。适用于用户询问某一天、昨天、今天或指定日期的 memo；日期匹配基于创建时间。",
+    annotations: readOnlyTool("按日期获取笔记"),
     inputSchema: dayInputSchema,
     isWrite: false,
     handler: async (args, extra) => {
@@ -117,7 +120,9 @@ export function createGetRangeTool(deps: ToolDeps): ToolDefinition {
   return {
     name: "memos_get_range",
     title: "按日期范围获取笔记",
-    description: "按指定时区中的日历日期范围获取笔记。startDate 和 endDate 都包含当天。",
+    description:
+      "按指定时区中的日历日期范围获取笔记。适用于用户询问一段时间内的 memo；startDate 和 endDate 都包含当天。",
+    annotations: readOnlyTool("按日期范围获取笔记"),
     inputSchema: rangeInputSchema,
     isWrite: false,
     handler: async (args, extra) => {
@@ -152,7 +157,9 @@ export function createOnThisDayTool(deps: ToolDeps): ToolDefinition {
   return {
     name: "memos_on_this_day",
     title: "那年今日",
-    description: "按指定时区获取历史上同月同日创建的笔记。不传 month/day 时使用今天。",
+    description:
+      "获取历史上同月同日创建的笔记。适用于用户询问那年今日、历史上的今天或同一天往年记录；不传 month/day 时使用今天。",
+    annotations: readOnlyTool("那年今日"),
     inputSchema: onThisDayInputSchema,
     isWrite: false,
     handler: async (args, extra) => {

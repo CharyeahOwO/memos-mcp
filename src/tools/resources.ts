@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { errorMessage, fail, ok } from "./format.js";
 import type { ToolDefinition, ToolDeps } from "./types.js";
+import { readOnlyTool } from "./annotations.js";
 
 const inputSchema = {
   pageSize: z.number().int().min(1).max(200).optional().describe("每页拉取数量，默认 100，最大 200"),
@@ -18,7 +19,9 @@ export function createResourcesListTool(deps: ToolDeps): ToolDefinition {
   return {
     name: "resources_list",
     title: "列出附件",
-    description: "从已拉取的笔记中聚合附件/资源列表，只读返回资源元数据和所属 memo。",
+    description:
+      "列出 memo 附件/资源元数据和所属 memo。适用于用户想查看图片、文件、附件或资源列表时。",
+    annotations: readOnlyTool("列出附件"),
     inputSchema,
     isWrite: false,
     handler: async (args, extra) => {

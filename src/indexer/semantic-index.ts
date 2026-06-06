@@ -34,19 +34,7 @@ export class SemanticIndexService {
     this.config = config;
   }
 
-  isEnabled(): boolean {
-    return this.config.enableSemanticSearch;
-  }
-
   async status(): Promise<Record<string, unknown>> {
-    if (!this.isEnabled()) {
-      return {
-        enabled: false,
-        indexPath: this.config.indexDb,
-        reason: "MEMOS_MCP_ENABLE_SEMANTIC_SEARCH=false",
-      };
-    }
-
     const file = await this.readIndex();
     if (!file) {
       return {
@@ -75,7 +63,6 @@ export class SemanticIndexService {
     client: MemosClient,
     params: { pageSize?: number; maxPages?: number } = {}
   ): Promise<Record<string, unknown>> {
-    this.assertEnabled();
     const page = await client.listAllMemos({
       pageSize: params.pageSize ?? 100,
       maxPages: params.maxPages ?? 20,
@@ -102,7 +89,7 @@ export class SemanticIndexService {
       createdAt: now,
       updatedAt: now,
       embeddingProvider: this.config.embeddingProvider,
-      embeddingModel: this.config.embeddingModel ?? "",
+      embeddingModel: this.config.embeddingModel,
       dimensions: embedded[0]?.embedding.length ?? 0,
       memos: embedded,
     };
@@ -122,7 +109,6 @@ export class SemanticIndexService {
     query: string,
     params: { limit?: number; minScore?: number } = {}
   ): Promise<SemanticSearchResult[]> {
-    this.assertEnabled();
     const file = await this.readIndex();
     if (!file || file.memos.length === 0) {
       throw new MemosApiError("语义索引为空，请先调用 memos_sync_index");
@@ -143,14 +129,6 @@ export class SemanticIndexService {
       .filter((item) => item.score >= minScore)
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);
-  }
-
-  private assertEnabled(): void {
-    if (!this.isEnabled()) {
-      throw new MemosApiError(
-        "语义搜索未启用。请设置 MEMOS_MCP_ENABLE_SEMANTIC_SEARCH=true，并配置 OpenAI-compatible embedding。"
-      );
-    }
   }
 
   private assertCompatibleIndex(file: SemanticIndexFile): void {

@@ -57,7 +57,6 @@ async function makeDeps(): Promise<{ deps: ToolDeps; cleanup: () => Promise<void
   const config = loadConfig({
     MEMOS_BASE_URL: "http://localhost:5230",
     MEMOS_MCP_TRANSPORT: "http",
-    MEMOS_MCP_ENABLE_SEMANTIC_SEARCH: "true",
     MEMOS_MCP_EMBEDDING_PROVIDER: "openai-compatible",
     MEMOS_MCP_EMBEDDING_BASE_URL: "http://127.0.0.1:11434/v1",
     MEMOS_MCP_EMBEDDING_MODEL: "test-embedding",

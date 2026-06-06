@@ -2,6 +2,7 @@ import { z } from "zod";
 import { errorMessage, fail, ok, summarizeMemo } from "./format.js";
 import type { ToolDefinition, ToolDeps } from "./types.js";
 import { VISIBILITIES } from "../config/index.js";
+import { createTool as createToolAnnotations } from "./annotations.js";
 
 const inputSchema = {
   content: z.string().min(1).describe("笔记内容（Markdown 文本）"),
@@ -17,7 +18,8 @@ export function createCreateTool(deps: ToolDeps): ToolDefinition {
     name: "memos_create",
     title: "新建笔记",
     description:
-      "在 Memos 中新建一条笔记。必须显式选择 visibility，让模型根据内容隐私性决定 PRIVATE / PROTECTED / PUBLIC。",
+      "在 Memos 中新建一条笔记。适用于用户要求保存、记录、写入长期记忆时；必须由模型根据内容隐私性选择 PRIVATE / PROTECTED / PUBLIC。",
+    annotations: createToolAnnotations("新建笔记"),
     inputSchema,
     isWrite: true,
     handler: async (args, extra) => {

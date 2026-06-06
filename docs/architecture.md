@@ -1,60 +1,56 @@
 # Architecture
 
-memos-mcp is a local-first MCP server for a user's own Memos instance.
+memos-mcp is a lightweight semantic retrieval layer for a user's Memos instance. It runs as an MCP server, reads memo data from Memos, writes embeddings to a local JSON vector index, and exposes search/read/write tools to MCP clients.
 
-## Boundaries
-
-- Base profile keeps no local memo copy.
-- Semantic profile stores vectors at `MEMOS_MCP_INDEX_DB`.
-- Write tools are hidden when `MEMOS_MCP_READONLY=true`.
-- Update/archive tools require `MEMOS_MCP_ENABLE_UPDATE_TOOLS=true`.
-- Delete tools are intentionally not implemented.
-- Semantic/vector dependencies are opt-in.
-
-## Profiles
-
-| Profile | Storage | Search |
-| --- | --- | --- |
-| Base local retrieval | none | Memos native keyword/filter API |
-| Local retrieval + semantic search | local JSON index at `MEMOS_MCP_INDEX_DB` | semantic by default in `memos_search` |
-
-SQLite/FTS and in-process local embedding models are planned upgrades, not base requirements.
-
-## Layers
+## Runtime Model
 
 ```mermaid
 flowchart LR
-  Client["MCP client"] -->|stdio or local HTTP| Transport["Transport adapter"]
+  Client["MCP client"] --> Transport["stdio or Streamable HTTP"]
   Transport --> Registry["Tool registry"]
   Registry --> Gate["Permission gate"]
   Gate --> Auth["Auth resolver"]
   Auth --> Api["Memos REST client"]
-  Api --> Memos["User-owned Memos API"]
-  Api --> Normalize["Response normalization"]
-  Normalize --> Registry
+  Api --> Memos["Memos API"]
+
+  Registry --> Sync["memos_sync_index"]
+  Sync --> Api
+  Sync --> Embed["OpenAI-compatible embeddings"]
+  Sync --> Index["Local JSON vector index"]
+
+  Registry --> Search["memos_search"]
+  Search -->|semantic default| Index
+  Search -->|keyword mode| Api
 ```
 
-Optional semantic profile:
+The vector index is part of the normal runtime. `memos_search` uses semantic retrieval by default, and keyword retrieval is an explicit search mode.
 
-```mermaid
-flowchart LR
-  Sync["memos_sync_index"] --> PageRead["Paginated memo reads"]
-  PageRead --> Embedding["OpenAI-compatible embeddings"]
-  Embedding --> Index["Local JSON vector index"]
-  Index --> Search["memos_search semantic mode"]
-  Search --> Result["Ranked memo summaries"]
-```
+## Data Flow
+
+1. `memos_sync_index` reads memo pages from Memos through the authenticated Memos API client.
+2. Memo content and tags are embedded through the configured OpenAI-compatible embedding endpoint.
+3. The server writes a local JSON index to `MEMOS_MCP_INDEX_DB`.
+4. `memos_search` embeds the query, ranks local memo vectors by cosine similarity, and returns memo summaries.
+5. `memos_search` with `mode: "keyword"` bypasses the index and uses Memos keyword filtering.
 
 ## Tool Registration
 
 All tools are declared as factories in `src/tools/*` and registered in `src/server/register-tools.ts`.
 
+Tool selection depends on the metadata returned by MCP `tools/list`:
+
+- `name`: stable programmatic identifier, for example `memos_search`.
+- `title`: short display name.
+- `description`: when to use the tool and when not to use it.
+- `inputSchema`: required parameters, allowed enum values, limits, and parameter descriptions.
+- `annotations`: behavior hints such as `readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint`.
+
 Rules:
 
 - `isWrite=true` tools are hidden when `MEMOS_MCP_READONLY=true`.
 - `memos_update` and `memos_archive` require `MEMOS_MCP_ENABLE_UPDATE_TOOLS=true`.
-- `memos_sync_index` and `memos_index_status` require `MEMOS_MCP_ENABLE_SEMANTIC_SEARCH=true`.
-- Delete tools are intentionally not implemented.
+- `memos_sync_index` and `memos_index_status` are always registered because the vector index is required.
+- Delete tools are not implemented.
 
 ## Auth Model
 
@@ -62,13 +58,13 @@ stdio:
 
 - Token comes from `MEMOS_ACCESS_TOKEN`.
 
-local HTTP:
+Streamable HTTP:
 
-- Token can come from `Authorization: Bearer <token>` on each request.
+- Token comes from each request's `Authorization: Bearer <Memos token>` header.
 
 ## Memos Compatibility
 
-The Memos API has changed field names and filter syntax across versions. The project isolates drift in:
+The Memos API has changed field names and filter syntax across versions. Compatibility handling is isolated in:
 
 - `src/memos/client.ts`
 - `src/memos/normalize.ts`
@@ -89,8 +85,8 @@ Time, tag, and resource tools aggregate over paginated memo reads to avoid relyi
 - `memos_create` requires explicit `visibility`.
 - HTTP binds to `127.0.0.1` by default.
 - Tokens and memo content are not logged.
-- Runtime data lives under ignored local paths such as `data/`.
-- External embedding providers are explicit opt-in; memo content may be sent to that provider during indexing.
+- Runtime index data lives under ignored local paths such as `data/`.
+- The configured embedding provider receives memo content during indexing and query text during semantic search.
 
 ## Repository Shape
 

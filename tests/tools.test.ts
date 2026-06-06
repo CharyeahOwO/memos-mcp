@@ -52,6 +52,8 @@ function makeDeps(page: NormalizedMemoPage = { memos }): ToolDeps {
     MEMOS_BASE_URL: "http://localhost:5230",
     MEMOS_MCP_TRANSPORT: "http",
     MEMOS_MCP_TIMEZONE: "Asia/Shanghai",
+    MEMOS_MCP_EMBEDDING_BASE_URL: "http://127.0.0.1:11434/v1",
+    MEMOS_MCP_EMBEDDING_MODEL: "nomic-embed-text",
   });
   const client = {
     listAllMemos: async () => page,
@@ -109,9 +111,9 @@ describe("memos_create", () => {
 });
 
 describe("memos_search", () => {
-  it("未启用语义搜索时默认使用关键词搜索", async () => {
+  it("显式 keyword 模式使用关键词搜索", async () => {
     const tool = createSearchTool(makeDeps());
-    const result = await tool.handler({ query: "private" }, {});
+    const result = await tool.handler({ query: "private", mode: "keyword" }, {});
     const data = parseResult(result);
     expect(data.mode).toBe("keyword");
     expect(data.memos).toEqual([expect.objectContaining({ id: "1" })]);

@@ -1,7 +1,7 @@
 {
   "name": "memos-mcp",
   "version": "0.1.0",
-  "description": "Local-first Model Context Protocol server for usememos/Memos with safe write tools and local retrieval.",
+  "description": "Lightweight Memos semantic retrieval layer with local vector indexing and MCP tools.",
   "type": "module",
   "license": "MIT",
   "author": "CharyeahOwO",

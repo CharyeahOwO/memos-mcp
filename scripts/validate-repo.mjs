@@ -56,6 +56,42 @@ for (const snippet of requiredReadmeSnippets) {
   }
 }
 
+const forbiddenSnippets = [
+  "MEMOS_MCP_ENABLE_SEMANTIC_SEARCH",
+  "enableSemanticSearch",
+  "Base profile",
+  "Semantic profile",
+  "base profile",
+  "semantic profile",
+  "Base local retrieval",
+  "Local retrieval + semantic search",
+  "optional local profile",
+  "Optional semantic profile",
+  "Semantic/vector dependencies are opt-in",
+];
+
+const filesWithoutProfileLanguage = [
+  "README.md",
+  "README.zh-CN.md",
+  "docs/architecture.md",
+  "docs/deployment.md",
+  "docs/semantic-search.md",
+  "src/indexer/README.md",
+  "src/config/index.ts",
+  "src/indexer/semantic-index.ts",
+  "src/tools/search.ts",
+  "src/tools/semantic.ts",
+];
+
+for (const file of filesWithoutProfileLanguage) {
+  const text = readFileSync(join(root, file), "utf8");
+  for (const snippet of forbiddenSnippets) {
+    if (text.includes(snippet)) {
+      throw new Error(`${file} contains removed optional semantic/profile language: ${snippet}`);
+    }
+  }
+}
+
 const forbiddenSecretPatterns = [
   /memos_pat_(?!x{4,}\b)[A-Za-z0-9_-]{16,}/,
   /\bsk-[A-Za-z0-9_-]{20,}\b/,

@@ -2,9 +2,10 @@ import { z } from "zod";
 import { errorMessage, fail, ok, summarizeMemo } from "./format.js";
 import type { ToolDefinition, ToolDeps } from "./types.js";
 import { SemanticIndexService } from "../indexer/semantic-index.js";
+import { readOnlyTool } from "./annotations.js";
 
 const inputSchema = {
-  query: z.string().min(1).describe("搜索查询。启用语义搜索时默认按语义检索，否则按关键词检索。"),
+  query: z.string().min(1).describe("搜索查询。默认按本地向量索引做语义检索。"),
   pageSize: z
     .number()
     .int()
@@ -28,7 +29,7 @@ const inputSchema = {
   mode: z
     .enum(["auto", "semantic", "keyword"])
     .optional()
-    .describe("搜索模式：auto（默认，启用语义则语义）/ semantic / keyword"),
+    .describe("搜索模式：auto（默认，等同 semantic）/ semantic / keyword"),
 } satisfies z.ZodRawShape;
 
 export function createSearchTool(deps: ToolDeps): ToolDefinition {
@@ -36,7 +37,8 @@ export function createSearchTool(deps: ToolDeps): ToolDefinition {
     name: "memos_search",
     title: "搜索笔记",
     description:
-      "搜索笔记。启用 MEMOS_MCP_ENABLE_SEMANTIC_SEARCH=true 后默认使用本地语义索引；未启用时使用 Memos 原生关键词匹配。",
+      "搜索笔记。适用于用户想查找、回忆、按含义检索 memo 时；默认使用本地向量索引做语义检索。只有用户明确要求精确关键词匹配时才传 mode: keyword。",
+    annotations: readOnlyTool("搜索笔记"),
     inputSchema,
     isWrite: false,
     handler: async (args, extra) => {
@@ -48,8 +50,8 @@ export function createSearchTool(deps: ToolDeps): ToolDefinition {
             ? args.mode
             : "auto";
 
-        const semanticIndex = new SemanticIndexService(deps.config);
-        if (mode === "semantic" || (mode === "auto" && semanticIndex.isEnabled())) {
+        if (mode === "semantic" || mode === "auto") {
+          const semanticIndex = new SemanticIndexService(deps.config);
           const limit = typeof args.limit === "number" ? args.limit : 20;
           const minScore = typeof args.minScore === "number" ? args.minScore : undefined;
           const results = await semanticIndex.search(query, { limit, minScore });

@@ -1,12 +1,11 @@
 # Indexer Module
 
-This directory implements the optional local vector search profile.
+This directory implements the local vector index used by `memos_sync_index`, `memos_index_status`, and semantic `memos_search`.
 
 Current responsibilities:
 
-- Local JSON memo/embedding index stored at `MEMOS_MCP_INDEX_DB`.
-- OpenAI-compatible embeddings through `/v1/embeddings`.
-- Manual sync, status inspection, and semantic search.
-- No base-profile dependency on SQLite, vector libraries, or local model runtimes.
+- Store memo embeddings in the local JSON index at `MEMOS_MCP_INDEX_DB`.
+- Call an OpenAI-compatible `/v1/embeddings` endpoint.
+- Sync memo pages, inspect index status, and run semantic search.
 
-Future improvements can replace the JSON store with SQLite/FTS/vector storage without changing the tool surface. See `docs/architecture.md` and `docs/semantic-search.md`.
+Future storage backends can replace the JSON index without changing the MCP tool surface. See `docs/architecture.md` and `docs/semantic-search.md`.
