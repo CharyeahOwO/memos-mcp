@@ -6,6 +6,7 @@ const root = process.cwd();
 const requiredFiles = [
   "README.md",
   "README.zh-CN.md",
+  "CHANGELOG.md",
   "CONTRIBUTING.md",
   ".env.example",
   ".dockerignore",

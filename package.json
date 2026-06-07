@@ -1,14 +1,29 @@
 {
-  "name": "memos-mcp",
+  "name": "@charyeahowo/memos-mcp",
   "version": "0.1.0",
   "description": "Lightweight Memos semantic retrieval layer with local vector indexing and MCP tools.",
   "type": "module",
   "license": "MIT",
   "author": "CharyeahOwO",
   "homepage": "https://github.com/CharyeahOwO/memos-mcp",
+  "bugs": {
+    "url": "https://github.com/CharyeahOwO/memos-mcp/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/CharyeahOwO/memos-mcp.git"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "memos",
+    "semantic-search",
+    "vector-search",
+    "ai-agent"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
   },
   "engines": {
     "node": ">=20"
@@ -21,20 +36,25 @@
     "docs",
     ".env.example",
     "README.md",
+    "README.zh-CN.md",
     "CONTRIBUTING.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "dev:http": "cross-env MEMOS_MCP_TRANSPORT=http tsx src/index.ts",
     "build": "tsup",
+    "prepack": "npm run build",
     "start": "node dist/index.js",
     "start:http": "cross-env MEMOS_MCP_TRANSPORT=http node dist/index.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "verify": "npm run typecheck && npm test && npm run build && npm run validate:repo",
+    "verify": "npm run typecheck && npm test && npm run build && npm run validate:repo && npm run validate:docker",
     "validate:repo": "node scripts/validate-repo.mjs",
+    "validate:docker": "node scripts/validate-docker.mjs",
     "smoke:http": "node scripts/smoke-http.mjs",
+    "smoke:stdio": "node scripts/smoke-stdio.mjs",
     "smoke:memos": "node scripts/smoke-memos-api.mjs"
   },
   "dependencies": {
@@ -49,6 +69,6 @@
     "tsup": "^8.3.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
-    "vitest": "^2.1.0"
+    "vitest": "^4.1.8"
   }
 }

@@ -43,6 +43,64 @@ describe("normalizeMemo", () => {
     });
     expect(memo.resources?.[0]?.name).toBe("resources/9");
   });
+
+  it("归一化 v0.24+ camelCase memo 完整字段", () => {
+    const memo = normalizeMemo({
+      name: "memos/42",
+      content: "hello",
+      visibility: "PROTECTED",
+      creator: "users/1",
+      pinned: true,
+      state: "NORMAL",
+      tags: ["daily", "work"],
+      createTime: "2026-06-07T01:02:03Z",
+      updateTime: "2026-06-07T04:05:06Z",
+      resources: [
+        {
+          name: "resources/7",
+          filename: "note.pdf",
+          type: "application/pdf",
+          size: 123,
+          externalLink: "https://example.com/note.pdf",
+        },
+      ],
+    });
+
+    expect(memo).toEqual(
+      expect.objectContaining({
+        id: "42",
+        name: "memos/42",
+        visibility: "PROTECTED",
+        creator: "users/1",
+        pinned: true,
+        state: "NORMAL",
+        tags: ["daily", "work"],
+        createdAt: "2026-06-07T01:02:03.000Z",
+        updatedAt: "2026-06-07T04:05:06.000Z",
+      })
+    );
+    expect(memo.resources).toEqual([
+      {
+        name: "resources/7",
+        filename: "note.pdf",
+        type: "application/pdf",
+        size: 123,
+        externalLink: "https://example.com/note.pdf",
+      },
+    ]);
+  });
+
+  it("空 resources 和空 timestamps 不会产生无效附件", () => {
+    const memo = normalizeMemo({
+      name: "memos/1",
+      createTime: "",
+      updateTime: "",
+      resources: [],
+    });
+    expect(memo.createdAt).toBe("");
+    expect(memo.updatedAt).toBeUndefined();
+    expect(memo.resources).toBeUndefined();
+  });
 });
 
 describe("normalizeMemoList", () => {
@@ -57,5 +115,13 @@ describe("normalizeMemoList", () => {
 
   it("memos 缺失时返回空数组", () => {
     expect(normalizeMemoList({}).memos).toEqual([]);
+  });
+
+  it("归一化 snake_case next_page_token", () => {
+    const page = normalizeMemoList({
+      memos: [{ name: "memos/1" }],
+      next_page_token: "snake-next",
+    });
+    expect(page.nextPageToken).toBe("snake-next");
   });
 });

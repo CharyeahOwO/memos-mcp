@@ -239,6 +239,9 @@ export class SemanticIndexService {
     const embeddingClient = new EmbeddingClient(this.config);
     const [queryEmbedding] = await embeddingClient.embed([query]);
     if (!queryEmbedding) throw new MemosApiError("查询 embedding 失败");
+    if (queryEmbedding.length !== file.dimensions) {
+      throw new MemosApiError("查询 embedding 维度与语义索引不一致，请重新同步索引");
+    }
 
     const minScore = params.minScore ?? -1;
     const limit = params.limit ?? 20;
@@ -256,13 +259,27 @@ export class SemanticIndexService {
     if (file.version !== INDEX_VERSION) {
       throw new MemosApiError("语义索引版本不兼容，请重新调用 memos_sync_index");
     }
+    if (file.embeddingProvider !== this.config.embeddingProvider) {
+      throw new MemosApiError("语义索引的 embedding provider 与当前配置不一致，请重新同步索引");
+    }
     if (file.embeddingModel !== this.config.embeddingModel) {
       throw new MemosApiError("语义索引的 embedding model 与当前配置不一致，请重新同步索引");
+    }
+    if (!Number.isInteger(file.dimensions) || file.dimensions <= 0) {
+      throw new MemosApiError("语义索引的向量维度不正确，请重新同步索引");
+    }
+    if (file.memos.some((memo) => memo.embedding.length !== file.dimensions)) {
+      throw new MemosApiError("语义索引内存在向量维度不一致的 memo，请重新同步索引");
     }
   }
 
   private reusableMemoMap(file: SemanticIndexFile | undefined): Map<string, SemanticIndexMemo> {
-    if (!file || file.version !== INDEX_VERSION || file.embeddingModel !== this.config.embeddingModel) {
+    if (
+      !file ||
+      file.version !== INDEX_VERSION ||
+      file.embeddingProvider !== this.config.embeddingProvider ||
+      file.embeddingModel !== this.config.embeddingModel
+    ) {
       return new Map();
     }
     return new Map(file.memos.map((memo) => [memo.name, memo]));
@@ -324,7 +341,12 @@ export class SemanticIndexService {
     }
 
     const text = await readFile(this.config.indexDb, "utf8");
-    const parsed = JSON.parse(text) as SemanticIndexFile;
+    let parsed: SemanticIndexFile;
+    try {
+      parsed = JSON.parse(text) as SemanticIndexFile;
+    } catch {
+      throw new MemosApiError("语义索引文件不是合法 JSON，请删除或重新调用 memos_sync_index");
+    }
     if (!Array.isArray(parsed.memos)) {
       throw new MemosApiError("语义索引文件格式不正确");
     }

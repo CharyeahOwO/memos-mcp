@@ -62,6 +62,14 @@ The runtime has one retrieval model: a local MCP server plus a local vector inde
 
 ### 1. Install
 
+From npm:
+
+```bash
+npm install -g @charyeahowo/memos-mcp
+```
+
+From source:
+
 ```bash
 git clone https://github.com/CharyeahOwO/memos-mcp.git
 cd memos-mcp
@@ -109,6 +117,8 @@ MEMOS_MCP_HOST=127.0.0.1 \
 MEMOS_MCP_PORT=8080 \
 node --env-file=.env dist/index.js
 ```
+
+When using the global npm CLI, set the same variables in the process environment and run `memos-mcp`.
 
 HTTP endpoint:
 
@@ -444,7 +454,9 @@ npm run typecheck
 npm test
 npm run build
 npm run validate:repo
+npm run validate:docker
 npm run smoke:http
+npm run smoke:stdio
 ```
 
 Real Memos API smoke:

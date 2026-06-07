@@ -62,6 +62,14 @@ flowchart LR
 
 ### 1. 安装
 
+从 npm 安装：
+
+```bash
+npm install -g @charyeahowo/memos-mcp
+```
+
+从源码安装：
+
 ```bash
 git clone https://github.com/CharyeahOwO/memos-mcp.git
 cd memos-mcp
@@ -109,6 +117,8 @@ MEMOS_MCP_HOST=127.0.0.1 \
 MEMOS_MCP_PORT=8080 \
 node --env-file=.env dist/index.js
 ```
+
+使用 npm 全局 CLI 时，需要把同一组变量设置到进程环境里，然后运行 `memos-mcp`。
 
 HTTP endpoint：
 
@@ -444,7 +454,9 @@ npm run typecheck
 npm test
 npm run build
 npm run validate:repo
+npm run validate:docker
 npm run smoke:http
+npm run smoke:stdio
 ```
 
 真实 Memos API 测试：

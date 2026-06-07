@@ -14,6 +14,7 @@ For local HTTP smoke testing:
 ```bash
 npm run build
 npm run smoke:http
+npm run smoke:stdio
 ```
 
 For real Memos API connectivity:
@@ -36,13 +37,14 @@ npm run smoke:memos
 - Do not add an author-hosted cloud service or public multi-user gateway.
 - Do not commit real Memos tokens, `.env`, local SQLite databases, logs, or embedding caches.
 - Keep destructive tools out of the default tool surface.
-- Keep semantic search optional; the base server must not load heavy vector dependencies.
+- Keep semantic search local-first: the vector index is required, stored locally, and backed by an OpenAI-compatible embedding endpoint.
 - Add or update tests and docs when changing tool behavior.
 
 ## Pull Request Checklist
 
 - `npm run verify` passes.
 - `npm run smoke:http` passes after a build.
+- `npm run smoke:stdio` passes after a build.
 - New config keys are added to `.env.example` and README.
 - New tools are added to README and registration tests.
 - No real secrets or private domains are included.
