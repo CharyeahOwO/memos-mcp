@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -31,9 +31,9 @@ const semanticMemos: NormalizedMemo[] = [
 ];
 
 function vectorFor(text: string): number[] {
-  if (/cat|kitten|feline/i.test(text)) return [1, 0, 0];
-  if (/dog|puppy|canine/i.test(text)) return [0, 1, 0];
-  return [0, 0, 1];
+  if (/cat|kitten|feline/i.test(text)) return [2, 0, 0];
+  if (/dog|puppy|canine/i.test(text)) return [0, 3, 0];
+  return [0, 0, 4];
 }
 
 function mockEmbeddingFetch() {
@@ -64,6 +64,9 @@ async function makeDeps(): Promise<{ deps: ToolDeps; cleanup: () => Promise<void
   });
   const page: NormalizedMemoPage = { memos: semanticMemos };
   const client = {
+    iterMemoPages: async function* () {
+      yield page;
+    },
     listAllMemos: async () => page,
     searchMemos: async () => page,
   } as unknown as MemosClient;
@@ -86,7 +89,7 @@ describe("semantic index", () => {
     vi.restoreAllMocks();
   });
 
-  it("cosineSimilarity 返回预期相似度", () => {
+  it("cosineSimilarity 对已归一化向量返回点积", () => {
     expect(cosineSimilarity([1, 0], [1, 0])).toBe(1);
     expect(cosineSimilarity([1, 0], [0, 1])).toBe(0);
   });
@@ -98,6 +101,8 @@ describe("semantic index", () => {
       const service = new SemanticIndexService(deps.config);
       const sync = await service.sync(deps.authResolver.resolveClient({}));
       expect(sync.indexed).toBe(2);
+      expect(sync.embedded).toBe(2);
+      expect(sync.reused).toBe(0);
 
       const status = await service.status();
       expect(status.ready).toBe(true);
@@ -106,6 +111,24 @@ describe("semantic index", () => {
       const results = await service.search("kitten memory", { limit: 2 });
       expect(results[0]?.memo.name).toBe("memos/1");
       expect(results[0]?.score).toBeGreaterThan(results[1]?.score ?? 0);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("同步索引时复用未变化 memo 的 embedding", async () => {
+    const fetchMock = mockEmbeddingFetch();
+    const { deps, cleanup } = await makeDeps();
+    try {
+      const service = new SemanticIndexService(deps.config);
+      await service.sync(deps.authResolver.resolveClient({}));
+
+      fetchMock.mockClear();
+      const sync = await service.sync(deps.authResolver.resolveClient({}));
+      expect(sync.indexed).toBe(2);
+      expect(sync.embedded).toBe(0);
+      expect(sync.reused).toBe(2);
+      expect(fetchMock).not.toHaveBeenCalled();
     } finally {
       await cleanup();
     }
@@ -126,6 +149,60 @@ describe("semantic index", () => {
         expect.objectContaining({ name: "memos/1" }),
         expect.objectContaining({ name: "memos/2" }),
       ]);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("memos_search 在索引缺失时自动同步后搜索", async () => {
+    mockEmbeddingFetch();
+    const { deps, cleanup } = await makeDeps();
+    try {
+      const searchTool = createSearchTool(deps);
+      const result = await searchTool.handler({ query: "kitten memory" }, {});
+      const data = parseResult(result);
+      expect(data.mode).toBe("semantic");
+      expect(data.index).toEqual(
+        expect.objectContaining({
+          synced: true,
+          reason: "missing",
+          expired: false,
+          ttlMinutes: 120,
+        })
+      );
+      expect(data.memos).toEqual([
+        expect.objectContaining({ name: "memos/1" }),
+        expect.objectContaining({ name: "memos/2" }),
+      ]);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("memos_search 在索引过期时自动同步后搜索", async () => {
+    const fetchMock = mockEmbeddingFetch();
+    const { deps, cleanup } = await makeDeps();
+    try {
+      await createSyncIndexTool(deps).handler({}, {});
+
+      const indexText = await readFile(deps.config.indexDb, "utf8");
+      const index = JSON.parse(indexText) as Record<string, unknown>;
+      index.updatedAt = "2000-01-01T00:00:00.000Z";
+      index.testStaleMarker = "force-cache-miss";
+      await writeFile(deps.config.indexDb, `${JSON.stringify(index)}\n`, "utf8");
+
+      fetchMock.mockClear();
+      const searchTool = createSearchTool(deps);
+      const result = await searchTool.handler({ query: "kitten memory" }, {});
+      const data = parseResult(result);
+      expect(data.index).toEqual(
+        expect.objectContaining({
+          synced: true,
+          reason: "expired",
+          expired: false,
+        })
+      );
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     } finally {
       await cleanup();
     }

@@ -52,12 +52,22 @@ export function createSearchTool(deps: ToolDeps): ToolDefinition {
 
         if (mode === "semantic" || mode === "auto") {
           const semanticIndex = new SemanticIndexService(deps.config);
+          const client = deps.authResolver.resolveClient(extra);
+          const maintenance = await semanticIndex.ensureFresh(client);
           const limit = typeof args.limit === "number" ? args.limit : 20;
           const minScore = typeof args.minScore === "number" ? args.minScore : undefined;
           const results = await semanticIndex.search(query, { limit, minScore });
           return ok({
             query,
             mode: "semantic",
+            index: {
+              synced: maintenance.synced,
+              reason: maintenance.reason,
+              expired: maintenance.freshness.expired,
+              expiresAt: maintenance.freshness.expiresAt,
+              expiresInSeconds: maintenance.freshness.expiresInSeconds,
+              ttlMinutes: maintenance.freshness.ttlMinutes,
+            },
             memos: results.map((item) => ({
               score: Number(item.score.toFixed(6)),
               ...summarizeMemo(item.memo),

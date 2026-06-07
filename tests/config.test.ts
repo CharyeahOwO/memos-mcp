@@ -55,6 +55,10 @@ describe("loadConfig", () => {
     expect(cfg.readonly).toBe(false);
     expect(cfg.enableUpdateTools).toBe(false);
     expect(cfg.embeddingProvider).toBe("openai-compatible");
+    expect(cfg.indexTtlMinutes).toBe(120);
+    expect(cfg.expiredIndexBehavior).toBe("sync");
+    expect(cfg.syncIntervalMinutes).toBe(120);
+    expect(cfg.syncOnStart).toBe(true);
     expect(cfg.timezone).toBe("UTC");
   });
 
@@ -70,6 +74,21 @@ describe("loadConfig", () => {
       MEMOS_MCP_ENABLE_UPDATE_TOOLS: "true",
     });
     expect(cfg.enableUpdateTools).toBe(true);
+  });
+
+  it("索引同步策略配置解析正确", () => {
+    const cfg = loadConfig({
+      ...base,
+      MEMOS_MCP_TRANSPORT: "http",
+      MEMOS_MCP_INDEX_TTL_MINUTES: "30",
+      MEMOS_MCP_EXPIRED_INDEX_BEHAVIOR: "error",
+      MEMOS_MCP_SYNC_INTERVAL_MINUTES: "0",
+      MEMOS_MCP_SYNC_ON_START: "false",
+    });
+    expect(cfg.indexTtlMinutes).toBe(30);
+    expect(cfg.expiredIndexBehavior).toBe("error");
+    expect(cfg.syncIntervalMinutes).toBe(0);
+    expect(cfg.syncOnStart).toBe(false);
   });
 
   it("缺少 embedding 配置时报错", () => {

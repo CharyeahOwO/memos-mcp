@@ -18,6 +18,9 @@ export type Visibility = (typeof VISIBILITIES)[number];
 export const EMBEDDING_PROVIDERS = ["openai-compatible"] as const;
 export type EmbeddingProvider = (typeof EMBEDDING_PROVIDERS)[number];
 
+export const EXPIRED_INDEX_BEHAVIORS = ["sync", "error", "allow"] as const;
+export type ExpiredIndexBehavior = (typeof EXPIRED_INDEX_BEHAVIORS)[number];
+
 /** 把 "true"/"false"/"1"/"0" 等字符串解析成布尔值 */
 const booleanFromString = (defaultValue: boolean) =>
   z
@@ -26,6 +29,27 @@ const booleanFromString = (defaultValue: boolean) =>
     .transform((value) => {
       if (value === undefined || value === "") return defaultValue;
       return ["1", "true", "yes", "on"].includes(value.toLowerCase());
+    });
+
+const integerFromString = (
+  defaultValue: number,
+  name: string,
+  min: number,
+  max: number
+) =>
+  z
+    .string()
+    .default(String(defaultValue))
+    .transform((value, ctx) => {
+      const number = Number(value);
+      if (!Number.isInteger(number) || number < min || number > max) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `${name} 必须是 ${min}-${max} 之间的整数`,
+        });
+        return z.NEVER;
+      }
+      return number;
     });
 
 const RawConfigSchema = z.object({
@@ -98,6 +122,30 @@ const RawConfigSchema = z.object({
       return size;
     }),
 
+  MEMOS_MCP_INDEX_TTL_MINUTES: integerFromString(
+    120,
+    "MEMOS_MCP_INDEX_TTL_MINUTES",
+    0,
+    10080
+  ),
+
+  MEMOS_MCP_EXPIRED_INDEX_BEHAVIOR: z
+    .enum(EXPIRED_INDEX_BEHAVIORS, {
+      errorMap: () => ({
+        message: "MEMOS_MCP_EXPIRED_INDEX_BEHAVIOR 只能是 sync、error 或 allow",
+      }),
+    })
+    .default("sync"),
+
+  MEMOS_MCP_SYNC_INTERVAL_MINUTES: integerFromString(
+    120,
+    "MEMOS_MCP_SYNC_INTERVAL_MINUTES",
+    0,
+    10080
+  ),
+
+  MEMOS_MCP_SYNC_ON_START: booleanFromString(true),
+
   MEMOS_MCP_TIMEZONE: z
     .string()
     .default("UTC")
@@ -132,6 +180,10 @@ export interface AppConfig {
   embeddingApiKey: string | undefined;
   embeddingModel: string;
   embeddingBatchSize: number;
+  indexTtlMinutes: number;
+  expiredIndexBehavior: ExpiredIndexBehavior;
+  syncIntervalMinutes: number;
+  syncOnStart: boolean;
   timezone: string;
   memosApiVersion: string | undefined;
 }
@@ -180,6 +232,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     embeddingApiKey: raw.MEMOS_MCP_EMBEDDING_API_KEY,
     embeddingModel: raw.MEMOS_MCP_EMBEDDING_MODEL,
     embeddingBatchSize: raw.MEMOS_MCP_EMBEDDING_BATCH_SIZE,
+    indexTtlMinutes: raw.MEMOS_MCP_INDEX_TTL_MINUTES,
+    expiredIndexBehavior: raw.MEMOS_MCP_EXPIRED_INDEX_BEHAVIOR,
+    syncIntervalMinutes: raw.MEMOS_MCP_SYNC_INTERVAL_MINUTES,
+    syncOnStart: raw.MEMOS_MCP_SYNC_ON_START,
     timezone: raw.MEMOS_MCP_TIMEZONE,
     memosApiVersion: raw.MEMOS_MCP_MEMOS_API_VERSION,
   };

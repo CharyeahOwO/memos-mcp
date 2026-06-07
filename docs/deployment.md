@@ -14,6 +14,7 @@ Set at least these values in `.env`:
 
 ```env
 MEMOS_BASE_URL=http://127.0.0.1:5230
+MEMOS_ACCESS_TOKEN=memos_pat_xxxx
 MEMOS_MCP_TRANSPORT=http
 MEMOS_MCP_HOST=127.0.0.1
 MEMOS_MCP_PORT=8080
@@ -21,6 +22,10 @@ MEMOS_MCP_INDEX_DB=./data/memos-mcp-index.json
 MEMOS_MCP_EMBEDDING_PROVIDER=openai-compatible
 MEMOS_MCP_EMBEDDING_BASE_URL=http://127.0.0.1:11434/v1
 MEMOS_MCP_EMBEDDING_MODEL=nomic-embed-text
+MEMOS_MCP_INDEX_TTL_MINUTES=120
+MEMOS_MCP_EXPIRED_INDEX_BEHAVIOR=sync
+MEMOS_MCP_SYNC_INTERVAL_MINUTES=120
+MEMOS_MCP_SYNC_ON_START=true
 ```
 
 ```bash
@@ -33,11 +38,15 @@ Health check: `http://127.0.0.1:8080/healthz`
 
 HTTP MCP clients must send `Authorization: Bearer <Memos token>` on requests to `/mcp`.
 
+`MEMOS_ACCESS_TOKEN` is also used by server-side startup and interval sync. If it is empty in HTTP mode, request-time search can still sync with the request's `Authorization` header, but background sync is skipped.
+
 ## Docker Compose
 
 The README includes a copyable Compose service. The repository also includes `docker-compose.example.yml`.
 
-The image runs as UID/GID `10001:10001`. Named volumes work without extra setup. If `MEMOS_MCP_INDEX_DB` points into a bind mount, make the host directory writable by that UID/GID:
+The image creates `/data` as UID/GID `10001:10001`, so a new named volume can be written by the non-root process. If a root-owned named volume was created by an older image, recreate the volume or fix its ownership before syncing the index.
+
+If `MEMOS_MCP_INDEX_DB` points into a bind mount, make the host directory writable by UID/GID `10001:10001`:
 
 ```bash
 mkdir -p /tmp/memos-mcp-data

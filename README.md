@@ -33,7 +33,7 @@ Supported clients include Claude Desktop, Cursor, VS Code Copilot MCP, Codex CLI
 | Memos PAT | Used by stdio as `MEMOS_ACCESS_TOKEN` or by HTTP as `Authorization: Bearer <Memos token>` |
 | Embedding API | OpenAI-compatible `/v1/embeddings` endpoint |
 
-The embedding endpoint is required. `memos_search` is semantic by default, so build the index with `memos_sync_index` before relying on search results.
+The embedding endpoint is required. `memos_search` is semantic by default. The server keeps the local index fresh with TTL-based sync, and `memos_sync_index` remains available for manual refresh or rebuild.
 
 ## Architecture
 
@@ -85,6 +85,10 @@ MEMOS_MCP_EMBEDDING_BASE_URL=https://api.example.com/v1
 MEMOS_MCP_EMBEDDING_MODEL=BAAI/bge-m3
 MEMOS_MCP_EMBEDDING_API_KEY=sk_xxxx
 MEMOS_MCP_EMBEDDING_BATCH_SIZE=32
+MEMOS_MCP_INDEX_TTL_MINUTES=120
+MEMOS_MCP_EXPIRED_INDEX_BEHAVIOR=sync
+MEMOS_MCP_SYNC_INTERVAL_MINUTES=120
+MEMOS_MCP_SYNC_ON_START=true
 ```
 
 Use an embedding base URL that accepts OpenAI-compatible embedding requests at `/v1/embeddings`. For example, if `MEMOS_MCP_EMBEDDING_BASE_URL=https://api.example.com/v1`, memos-mcp calls `https://api.example.com/v1/embeddings`.
@@ -118,9 +122,15 @@ HTTP clients must send:
 Authorization: Bearer <Memos token>
 ```
 
-### 4. Sync The Index
+### 4. Maintain The Index
 
-After connecting an MCP client, run:
+The server treats the local vector index as a cache with a TTL. By default:
+
+- `memos_search` checks the index before semantic search.
+- If the index is missing or expired, the server runs an incremental sync first.
+- A long-running server also syncs in the background every 120 minutes when `MEMOS_ACCESS_TOKEN` is configured.
+
+Manual maintenance tools remain available:
 
 ```text
 memos_sync_index
@@ -146,6 +156,7 @@ services:
     restart: unless-stopped
     environment:
       MEMOS_BASE_URL: http://host.docker.internal:5230
+      MEMOS_ACCESS_TOKEN: memos_pat_xxxx
       MEMOS_MCP_TRANSPORT: http
       MEMOS_MCP_HOST: 0.0.0.0
       MEMOS_MCP_PORT: 8080
@@ -157,6 +168,10 @@ services:
       MEMOS_MCP_EMBEDDING_MODEL: BAAI/bge-m3
       MEMOS_MCP_EMBEDDING_API_KEY: sk_xxxx
       MEMOS_MCP_EMBEDDING_BATCH_SIZE: "32"
+      MEMOS_MCP_INDEX_TTL_MINUTES: "120"
+      MEMOS_MCP_EXPIRED_INDEX_BEHAVIOR: sync
+      MEMOS_MCP_SYNC_INTERVAL_MINUTES: "120"
+      MEMOS_MCP_SYNC_ON_START: "true"
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
@@ -168,7 +183,9 @@ volumes:
   memos-mcp-data:
 ```
 
-The container runs as UID/GID `10001:10001`. Named volumes work without extra setup. If you use a bind mount for `/data`, make the host directory writable by that UID/GID:
+The image creates `/data` as UID/GID `10001:10001`, so a new named volume can be written by the non-root process. If you already created a root-owned volume with an older image, recreate the volume or fix its ownership before running `memos_sync_index`.
+
+If you use a bind mount for `/data`, make the host directory writable by UID/GID `10001:10001`:
 
 ```bash
 mkdir -p /tmp/memos-mcp-data
@@ -390,7 +407,7 @@ openclaw mcp set memos '{"url":"http://127.0.0.1:8080/mcp","transport":"streamab
 | Variable | Default | Required | Description |
 | --- | --- | --- | --- |
 | `MEMOS_BASE_URL` | none | yes | Memos instance URL. |
-| `MEMOS_ACCESS_TOKEN` | none | stdio only | Memos PAT for stdio mode. |
+| `MEMOS_ACCESS_TOKEN` | none | stdio / scheduled sync | Memos PAT for stdio mode and server-side startup/interval sync. HTTP clients can still provide a token per request. |
 | `MEMOS_MCP_TRANSPORT` | `stdio` | no | `stdio` or `http`. |
 | `MEMOS_MCP_HOST` | `127.0.0.1` | no | HTTP bind host. |
 | `MEMOS_MCP_PORT` | `8080` | no | HTTP port. |
@@ -403,6 +420,10 @@ openclaw mcp set memos '{"url":"http://127.0.0.1:8080/mcp","transport":"streamab
 | `MEMOS_MCP_EMBEDDING_MODEL` | none | yes | Embedding model. |
 | `MEMOS_MCP_EMBEDDING_API_KEY` | none | no | Embedding API key. |
 | `MEMOS_MCP_EMBEDDING_BATCH_SIZE` | `32` | no | Embedding batch size, 1 to 128. |
+| `MEMOS_MCP_INDEX_TTL_MINUTES` | `120` | no | Local vector index TTL. `0` disables expiration. |
+| `MEMOS_MCP_EXPIRED_INDEX_BEHAVIOR` | `sync` | no | What `memos_search` does when the index is expired: `sync`, `error`, or `allow`. |
+| `MEMOS_MCP_SYNC_INTERVAL_MINUTES` | `120` | no | Background sync interval. `0` disables scheduled sync. Requires `MEMOS_ACCESS_TOKEN`. |
+| `MEMOS_MCP_SYNC_ON_START` | `true` | no | Run one background sync after server start. Requires `MEMOS_ACCESS_TOKEN`. |
 
 ## Troubleshooting
 
@@ -410,8 +431,8 @@ openclaw mcp set memos '{"url":"http://127.0.0.1:8080/mcp","transport":"streamab
 | --- | --- |
 | Startup fails with embedding config errors | Set `MEMOS_MCP_EMBEDDING_BASE_URL` and `MEMOS_MCP_EMBEDDING_MODEL`. |
 | HTTP client gets auth errors | Send `Authorization: Bearer <Memos token>` with each MCP request. |
-| `memos_search` says the index is empty | Run `memos_sync_index` first. |
-| Semantic search returns stale results | Run `memos_sync_index` after memo changes. |
+| `memos_search` says the index is empty | Check embedding config and auth; default behavior is to sync automatically before search. |
+| Semantic search returns stale results | Check `MEMOS_MCP_INDEX_TTL_MINUTES` and `MEMOS_MCP_EXPIRED_INDEX_BEHAVIOR`, or run `memos_sync_index`. |
 | Docker index sync gets `EACCES` | Use the named volume or make the bind mount writable by UID/GID `10001:10001`. |
 | Date tools return unexpected days | Set `MEMOS_MCP_TIMEZONE`, for example `Asia/Shanghai`. |
 

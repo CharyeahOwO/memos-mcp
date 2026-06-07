@@ -3,6 +3,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { buildServer } from "./build-server.js";
 import { logger } from "../logging/logger.js";
 import type { AppConfig } from "../config/index.js";
+import { startIndexScheduler } from "../indexer/scheduler.js";
 
 /**
  * 启动无状态 Streamable HTTP 传输（本机 / 局域网用）。
@@ -16,6 +17,7 @@ import type { AppConfig } from "../config/index.js";
 export async function startHttp(config: AppConfig): Promise<void> {
   const app = express();
   app.use(express.json());
+  startIndexScheduler(config);
 
   // 健康检查
   app.get("/healthz", (_req: Request, res: Response) => {

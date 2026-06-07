@@ -36,7 +36,7 @@ export function createSyncIndexTool(deps: ToolDeps): ToolDefinition {
         const maxPages = typeof args.maxPages === "number" ? args.maxPages : 20;
         const client = deps.authResolver.resolveClient(extra);
         const service = new SemanticIndexService(deps.config);
-        const result = await service.sync(client, { pageSize, maxPages });
+        const result = await service.syncLocked(client, { pageSize, maxPages });
         return ok(result);
       } catch (error) {
         return fail(errorMessage(error));

@@ -6,7 +6,15 @@ import { MemosApiError } from "../memos/errors.js";
 import type { NormalizedMemo } from "../memos/types.js";
 import { EmbeddingClient } from "./embeddings.js";
 
-const INDEX_VERSION = 1;
+const INDEX_VERSION = 2;
+
+interface IndexCacheEntry {
+  mtimeMs: number;
+  size: number;
+  file: SemanticIndexFile;
+}
+
+const indexCache = new Map<string, IndexCacheEntry>();
 
 export interface SemanticIndexMemo extends NormalizedMemo {
   embedding: number[];
@@ -27,6 +35,24 @@ export interface SemanticSearchResult {
   score: number;
 }
 
+export interface IndexFreshness {
+  ready: boolean;
+  expired: boolean;
+  ttlMinutes: number;
+  updatedAt?: string;
+  expiresAt?: string;
+  expiresInSeconds?: number;
+}
+
+export interface IndexMaintenanceResult {
+  synced: boolean;
+  reason: "fresh" | "missing" | "expired" | "allowed-stale";
+  freshness: IndexFreshness;
+  syncResult?: Record<string, unknown>;
+}
+
+const syncLocks = new Map<string, Promise<Record<string, unknown>>>();
+
 export class SemanticIndexService {
   private readonly config: AppConfig;
 
@@ -36,10 +62,14 @@ export class SemanticIndexService {
 
   async status(): Promise<Record<string, unknown>> {
     const file = await this.readIndex();
+    const freshness = this.freshnessFromFile(file);
     if (!file) {
       return {
         enabled: true,
         ready: false,
+        expired: freshness.expired,
+        ttlMinutes: freshness.ttlMinutes,
+        expiresInSeconds: freshness.expiresInSeconds,
         indexPath: this.config.indexDb,
         memoCount: 0,
         embeddingProvider: this.config.embeddingProvider,
@@ -50,6 +80,10 @@ export class SemanticIndexService {
     return {
       enabled: true,
       ready: true,
+      expired: freshness.expired,
+      ttlMinutes: freshness.ttlMinutes,
+      expiresAt: freshness.expiresAt,
+      expiresInSeconds: freshness.expiresInSeconds,
       indexPath: this.config.indexDb,
       memoCount: file.memos.length,
       updatedAt: file.updatedAt,
@@ -59,34 +93,118 @@ export class SemanticIndexService {
     };
   }
 
+  async freshness(): Promise<IndexFreshness> {
+    return this.freshnessFromFile(await this.readIndex());
+  }
+
+  async ensureFresh(client: MemosClient): Promise<IndexMaintenanceResult> {
+    const freshness = await this.freshness();
+    if (!freshness.ready) {
+      if (this.config.expiredIndexBehavior !== "sync") {
+        throw new MemosApiError("语义索引为空，请先调用 memos_sync_index");
+      }
+      const syncResult = await this.syncLocked(client);
+      return {
+        synced: true,
+        reason: "missing",
+        freshness: await this.freshness(),
+        syncResult,
+      };
+    }
+
+    if (!freshness.expired) {
+      return { synced: false, reason: "fresh", freshness };
+    }
+
+    if (this.config.expiredIndexBehavior === "allow") {
+      return { synced: false, reason: "allowed-stale", freshness };
+    }
+
+    if (this.config.expiredIndexBehavior === "error") {
+      throw new MemosApiError("语义索引已过期，请先调用 memos_sync_index");
+    }
+
+    const syncResult = await this.syncLocked(client);
+    return {
+      synced: true,
+      reason: "expired",
+      freshness: await this.freshness(),
+      syncResult,
+    };
+  }
+
+  async syncLocked(
+    client: MemosClient,
+    params: { pageSize?: number; maxPages?: number } = {}
+  ): Promise<Record<string, unknown>> {
+    const existing = syncLocks.get(this.config.indexDb);
+    if (existing) return existing;
+
+    const promise = this.sync(client, params).finally(() => {
+      syncLocks.delete(this.config.indexDb);
+    });
+    syncLocks.set(this.config.indexDb, promise);
+    return promise;
+  }
+
   async sync(
     client: MemosClient,
     params: { pageSize?: number; maxPages?: number } = {}
   ): Promise<Record<string, unknown>> {
-    const page = await client.listAllMemos({
+    const previousFile = await this.readIndex();
+    const reusableMemos = this.reusableMemoMap(previousFile);
+    const embeddingClient = new EmbeddingClient(this.config);
+    const embedded: SemanticIndexMemo[] = [];
+    const pending: NormalizedMemo[] = [];
+    let scanned = 0;
+    let embeddedCount = 0;
+    let reused = 0;
+    let pages = 0;
+    let nextPageToken: string | undefined;
+
+    const flushPending = async () => {
+      if (pending.length === 0) return;
+      const batch = pending.splice(0, pending.length);
+      const vectors = await embeddingClient.embed(batch.map(embeddingText));
+      for (let i = 0; i < batch.length; i += 1) {
+        const memo = batch[i];
+        const embedding = vectors[i];
+        if (!memo || !embedding) continue;
+        embedded.push({ ...memo, embedding });
+        embeddedCount += 1;
+      }
+    };
+
+    for await (const page of client.iterMemoPages({
       pageSize: params.pageSize ?? 100,
       maxPages: params.maxPages ?? 20,
       orderBy: "update_time desc",
-    });
-    const memos = page.memos;
-    const embeddingClient = new EmbeddingClient(this.config);
-    const embedded: SemanticIndexMemo[] = [];
+    })) {
+      pages += 1;
+      scanned += page.memos.length;
+      nextPageToken = page.nextPageToken;
 
-    for (let i = 0; i < memos.length; i += this.config.embeddingBatchSize) {
-      const batch = memos.slice(i, i + this.config.embeddingBatchSize);
-      const vectors = await embeddingClient.embed(batch.map(embeddingText));
-      for (let j = 0; j < batch.length; j += 1) {
-        const memo = batch[j];
-        const embedding = vectors[j];
-        if (!memo || !embedding) continue;
-        embedded.push({ ...memo, embedding });
+      for (const memo of page.memos) {
+        const existing = reusableMemos.get(memo.name);
+        if (existing && canReuseEmbedding(existing, memo)) {
+          embedded.push({ ...memo, embedding: existing.embedding });
+          reused += 1;
+          continue;
+        }
+
+        pending.push(memo);
+        if (pending.length >= this.config.embeddingBatchSize) {
+          await flushPending();
+        }
       }
     }
+
+    await flushPending();
 
     const now = new Date().toISOString();
     const file: SemanticIndexFile = {
       version: INDEX_VERSION,
-      createdAt: now,
+      createdAt: previousFile?.createdAt ?? now,
       updatedAt: now,
       embeddingProvider: this.config.embeddingProvider,
       embeddingModel: this.config.embeddingModel,
@@ -97,8 +215,11 @@ export class SemanticIndexService {
 
     return {
       indexed: embedded.length,
-      scanned: memos.length,
-      nextPageToken: page.nextPageToken,
+      scanned,
+      embedded: embeddedCount,
+      reused,
+      pages,
+      nextPageToken,
       indexPath: this.config.indexDb,
       updatedAt: now,
       dimensions: file.dimensions,
@@ -140,25 +261,92 @@ export class SemanticIndexService {
     }
   }
 
+  private reusableMemoMap(file: SemanticIndexFile | undefined): Map<string, SemanticIndexMemo> {
+    if (!file || file.version !== INDEX_VERSION || file.embeddingModel !== this.config.embeddingModel) {
+      return new Map();
+    }
+    return new Map(file.memos.map((memo) => [memo.name, memo]));
+  }
+
+  private freshnessFromFile(file: SemanticIndexFile | undefined): IndexFreshness {
+    if (!file) {
+      return {
+        ready: false,
+        expired: true,
+        ttlMinutes: this.config.indexTtlMinutes,
+        expiresInSeconds: 0,
+      };
+    }
+
+    if (this.config.indexTtlMinutes === 0) {
+      return {
+        ready: true,
+        expired: false,
+        ttlMinutes: 0,
+        updatedAt: file.updatedAt,
+      };
+    }
+
+    const updatedAtMs = Date.parse(file.updatedAt);
+    if (Number.isNaN(updatedAtMs)) {
+      return {
+        ready: true,
+        expired: true,
+        ttlMinutes: this.config.indexTtlMinutes,
+        updatedAt: file.updatedAt,
+        expiresInSeconds: 0,
+      };
+    }
+
+    const expiresAtMs = updatedAtMs + this.config.indexTtlMinutes * 60_000;
+    const remainingMs = expiresAtMs - Date.now();
+    return {
+      ready: true,
+      expired: remainingMs <= 0,
+      ttlMinutes: this.config.indexTtlMinutes,
+      updatedAt: file.updatedAt,
+      expiresAt: new Date(expiresAtMs).toISOString(),
+      expiresInSeconds: Math.max(0, Math.ceil(remainingMs / 1000)),
+    };
+  }
+
   private async readIndex(): Promise<SemanticIndexFile | undefined> {
+    let stats;
     try {
-      await stat(this.config.indexDb);
+      stats = await stat(this.config.indexDb);
     } catch {
       return undefined;
     }
+
+    const cached = indexCache.get(this.config.indexDb);
+    if (cached && cached.mtimeMs === stats.mtimeMs && cached.size === stats.size) {
+      return cached.file;
+    }
+
     const text = await readFile(this.config.indexDb, "utf8");
     const parsed = JSON.parse(text) as SemanticIndexFile;
     if (!Array.isArray(parsed.memos)) {
       throw new MemosApiError("语义索引文件格式不正确");
     }
+    indexCache.set(this.config.indexDb, {
+      mtimeMs: stats.mtimeMs,
+      size: stats.size,
+      file: parsed,
+    });
     return parsed;
   }
 
   private async writeIndex(file: SemanticIndexFile): Promise<void> {
     await mkdir(dirname(this.config.indexDb), { recursive: true });
     const tempPath = `${this.config.indexDb}.tmp`;
-    await writeFile(tempPath, `${JSON.stringify(file, null, 2)}\n`, "utf8");
+    await writeFile(tempPath, `${JSON.stringify(file)}\n`, "utf8");
     await rename(tempPath, this.config.indexDb);
+    const stats = await stat(this.config.indexDb);
+    indexCache.set(this.config.indexDb, {
+      mtimeMs: stats.mtimeMs,
+      size: stats.size,
+      file,
+    });
   }
 }
 
@@ -175,15 +363,14 @@ function stripEmbedding(memo: SemanticIndexMemo): NormalizedMemo {
 export function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length !== b.length || a.length === 0) return 0;
   let dot = 0;
-  let normA = 0;
-  let normB = 0;
   for (let i = 0; i < a.length; i += 1) {
     const av = a[i] ?? 0;
     const bv = b[i] ?? 0;
     dot += av * bv;
-    normA += av * av;
-    normB += bv * bv;
   }
-  if (normA === 0 || normB === 0) return 0;
-  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+  return dot;
+}
+
+function canReuseEmbedding(existing: SemanticIndexMemo, memo: NormalizedMemo): boolean {
+  return existing.embedding.length > 0 && embeddingText(existing) === embeddingText(memo);
 }

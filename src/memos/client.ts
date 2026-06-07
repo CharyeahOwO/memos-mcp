@@ -125,24 +125,33 @@ export class MemosClient {
     return normalizeMemoList(raw);
   }
 
-  /** 分页拉取多页 memos，供本地聚合类工具使用。 */
-  async listAllMemos(params: ListAllMemosParams = {}): Promise<NormalizedMemoPage> {
+  /** 逐页拉取 memos，供索引同步和本地聚合工具使用。 */
+  async *iterMemoPages(params: ListAllMemosParams = {}): AsyncGenerator<NormalizedMemoPage> {
     const pageSize = params.pageSize ?? 100;
     const maxPages = params.maxPages ?? 20;
-    const memos: NormalizedMemo[] = [];
+    const { maxPages: _maxPages, ...listParams } = params;
     let pageToken = params.pageToken;
-    let nextPageToken: string | undefined;
 
     for (let page = 0; page < maxPages; page += 1) {
       const result = await this.listMemos({
-        ...params,
+        ...listParams,
         pageSize,
         pageToken,
       });
+      yield result;
+      if (!result.nextPageToken) break;
+      pageToken = result.nextPageToken;
+    }
+  }
+
+  /** 分页拉取多页 memos，供本地聚合类工具使用。 */
+  async listAllMemos(params: ListAllMemosParams = {}): Promise<NormalizedMemoPage> {
+    const memos: NormalizedMemo[] = [];
+    let nextPageToken: string | undefined;
+
+    for await (const result of this.iterMemoPages(params)) {
       memos.push(...result.memos);
       nextPageToken = result.nextPageToken;
-      if (!nextPageToken) break;
-      pageToken = nextPageToken;
     }
 
     return { memos, nextPageToken };

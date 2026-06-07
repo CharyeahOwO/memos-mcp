@@ -55,7 +55,19 @@ export class EmbeddingClient {
         if (!Array.isArray(row.embedding) || row.embedding.length === 0) {
           throw new MemosApiError("Embedding API 返回了空 embedding");
         }
-        return row.embedding;
+        return normalizeEmbedding(row.embedding);
       });
   }
+}
+
+function normalizeEmbedding(vector: number[]): number[] {
+  let norm = 0;
+  for (const value of vector) {
+    norm += value * value;
+  }
+  norm = Math.sqrt(norm);
+  if (norm === 0) {
+    throw new MemosApiError("Embedding API 返回了零向量，无法归一化");
+  }
+  return vector.map((value) => value / norm);
 }

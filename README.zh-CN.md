@@ -33,7 +33,7 @@ memos-mcp 是一个轻量级的 Memos 语义检索层。它会把 Memos 内容�
 | Memos PAT | stdio 使用 `MEMOS_ACCESS_TOKEN`，HTTP 使用 `Authorization: Bearer <Memos token>` |
 | Embedding API | OpenAI-compatible `/v1/embeddings` endpoint |
 
-embedding endpoint 是必需配置。`memos_search` 默认语义搜索，所以正式检索前需要先调用 `memos_sync_index` 建索引。
+embedding endpoint 是必需配置。`memos_search` 默认语义搜索；服务端会按 TTL 维护本地索引，`memos_sync_index` 仍可用于手动刷新或重建。
 
 ## 架构
 
@@ -85,6 +85,10 @@ MEMOS_MCP_EMBEDDING_BASE_URL=https://api.example.com/v1
 MEMOS_MCP_EMBEDDING_MODEL=BAAI/bge-m3
 MEMOS_MCP_EMBEDDING_API_KEY=sk_xxxx
 MEMOS_MCP_EMBEDDING_BATCH_SIZE=32
+MEMOS_MCP_INDEX_TTL_MINUTES=120
+MEMOS_MCP_EXPIRED_INDEX_BEHAVIOR=sync
+MEMOS_MCP_SYNC_INTERVAL_MINUTES=120
+MEMOS_MCP_SYNC_ON_START=true
 ```
 
 embedding base URL 需要支持 OpenAI-compatible embedding 请求。例如 `MEMOS_MCP_EMBEDDING_BASE_URL=https://api.example.com/v1` 时，memos-mcp 会调用 `https://api.example.com/v1/embeddings`。
@@ -118,9 +122,15 @@ HTTP 客户端必须发送：
 Authorization: Bearer <Memos token>
 ```
 
-### 4. 同步索引
+### 4. 维护索引
 
-连接 MCP 客户端后调用：
+服务端会把本地向量索引当作带 TTL 的缓存。默认行为：
+
+- `memos_search` 在语义搜索前检查索引状态。
+- 索引缺失或过期时，服务端先执行一次增量同步。
+- 长期运行的服务如果配置了 `MEMOS_ACCESS_TOKEN`，还会每 120 分钟后台同步一次。
+
+手动维护工具仍然保留：
 
 ```text
 memos_sync_index
@@ -146,6 +156,7 @@ services:
     restart: unless-stopped
     environment:
       MEMOS_BASE_URL: http://host.docker.internal:5230
+      MEMOS_ACCESS_TOKEN: memos_pat_xxxx
       MEMOS_MCP_TRANSPORT: http
       MEMOS_MCP_HOST: 0.0.0.0
       MEMOS_MCP_PORT: 8080
@@ -157,6 +168,10 @@ services:
       MEMOS_MCP_EMBEDDING_MODEL: BAAI/bge-m3
       MEMOS_MCP_EMBEDDING_API_KEY: sk_xxxx
       MEMOS_MCP_EMBEDDING_BATCH_SIZE: "32"
+      MEMOS_MCP_INDEX_TTL_MINUTES: "120"
+      MEMOS_MCP_EXPIRED_INDEX_BEHAVIOR: sync
+      MEMOS_MCP_SYNC_INTERVAL_MINUTES: "120"
+      MEMOS_MCP_SYNC_ON_START: "true"
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
@@ -168,7 +183,9 @@ volumes:
   memos-mcp-data:
 ```
 
-容器内进程使用 UID/GID `10001:10001`。named volume 不需要额外处理。使用 `/data` bind mount 时，宿主机目录必须允许该 UID/GID 写入：
+镜像会将 `/data` 创建为 UID/GID `10001:10001`，新的 named volume 会被非 root 进程正常写入。如果你已经用旧镜像创建过 root-owned volume，需要重建该 volume 或修正所有权后再运行 `memos_sync_index`。
+
+使用 `/data` bind mount 时，宿主机目录必须允许 UID/GID `10001:10001` 写入：
 
 ```bash
 mkdir -p /tmp/memos-mcp-data
@@ -390,7 +407,7 @@ openclaw mcp set memos '{"url":"http://127.0.0.1:8080/mcp","transport":"streamab
 | 变量 | 默认值 | 是否必填 | 说明 |
 | --- | --- | --- | --- |
 | `MEMOS_BASE_URL` | 无 | 是 | Memos 实例地址。 |
-| `MEMOS_ACCESS_TOKEN` | 无 | 仅 stdio 必填 | stdio 模式使用的 Memos PAT。 |
+| `MEMOS_ACCESS_TOKEN` | 无 | stdio / 定时同步 | stdio 模式和服务端启动/定时同步使用的 Memos PAT；HTTP 客户端仍可按请求传 token。 |
 | `MEMOS_MCP_TRANSPORT` | `stdio` | 否 | `stdio` 或 `http`。 |
 | `MEMOS_MCP_HOST` | `127.0.0.1` | 否 | HTTP 绑定地址。 |
 | `MEMOS_MCP_PORT` | `8080` | 否 | HTTP 端口。 |
@@ -403,6 +420,10 @@ openclaw mcp set memos '{"url":"http://127.0.0.1:8080/mcp","transport":"streamab
 | `MEMOS_MCP_EMBEDDING_MODEL` | 无 | 是 | embedding 模型。 |
 | `MEMOS_MCP_EMBEDDING_API_KEY` | 无 | 否 | embedding API key。 |
 | `MEMOS_MCP_EMBEDDING_BATCH_SIZE` | `32` | 否 | embedding batch size，范围 1 到 128。 |
+| `MEMOS_MCP_INDEX_TTL_MINUTES` | `120` | 否 | 本地向量索引有效期；`0` 表示永不过期。 |
+| `MEMOS_MCP_EXPIRED_INDEX_BEHAVIOR` | `sync` | 否 | 索引过期时 `memos_search` 的行为：`sync`、`error` 或 `allow`。 |
+| `MEMOS_MCP_SYNC_INTERVAL_MINUTES` | `120` | 否 | 后台定时同步间隔；`0` 关闭。需要 `MEMOS_ACCESS_TOKEN`。 |
+| `MEMOS_MCP_SYNC_ON_START` | `true` | 否 | 服务启动后后台同步一次。需要 `MEMOS_ACCESS_TOKEN`。 |
 
 ## 排错
 
@@ -410,8 +431,8 @@ openclaw mcp set memos '{"url":"http://127.0.0.1:8080/mcp","transport":"streamab
 | --- | --- |
 | 启动时报 embedding 配置错误 | 设置 `MEMOS_MCP_EMBEDDING_BASE_URL` 和 `MEMOS_MCP_EMBEDDING_MODEL`。 |
 | HTTP 客户端鉴权失败 | 每次 MCP 请求都发送 `Authorization: Bearer <Memos token>`。 |
-| `memos_search` 提示索引为空 | 先运行 `memos_sync_index`。 |
-| 语义搜索结果过旧 | memo 变更后重新运行 `memos_sync_index`。 |
+| `memos_search` 提示索引为空 | 检查 embedding 配置和鉴权；默认会在搜索前自动同步。 |
+| 语义搜索结果过旧 | 检查 `MEMOS_MCP_INDEX_TTL_MINUTES` 和 `MEMOS_MCP_EXPIRED_INDEX_BEHAVIOR`，或手动运行 `memos_sync_index`。 |
 | Docker 同步索引时报 `EACCES` | 使用 named volume，或让 bind mount 目录可被 UID/GID `10001:10001` 写入。 |
 | 日期工具结果不符合预期 | 设置 `MEMOS_MCP_TIMEZONE`，例如 `Asia/Shanghai`。 |
 

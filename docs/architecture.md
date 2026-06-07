@@ -28,10 +28,12 @@ The vector index is part of the normal runtime. `memos_search` uses semantic ret
 ## Data Flow
 
 1. `memos_sync_index` reads memo pages from Memos through the authenticated Memos API client.
-2. Memo content and tags are embedded through the configured OpenAI-compatible embedding endpoint.
-3. The server writes a local JSON index to `MEMOS_MCP_INDEX_DB`.
-4. `memos_search` embeds the query, ranks local memo vectors by cosine similarity, and returns memo summaries.
-5. `memos_search` with `mode: "keyword"` bypasses the index and uses Memos keyword filtering.
+2. Unchanged memo embeddings are reused from the existing local index.
+3. New or changed memo content and tags are embedded through the configured OpenAI-compatible embedding endpoint.
+4. Embeddings are L2-normalized and written to `MEMOS_MCP_INDEX_DB`.
+5. `memos_search` checks index TTL before semantic search and runs incremental sync first when the configured expired-index behavior is `sync`.
+6. `memos_search` embeds and normalizes the query, ranks local memo vectors by dot product, and returns memo summaries.
+7. `memos_search` with `mode: "keyword"` bypasses the index and uses Memos keyword filtering.
 
 ## Tool Registration
 
