@@ -43,5 +43,15 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Smoke MCP transports
+        run: |
+          npm run smoke:stdio
+          npm run smoke:http
+
       - name: Validate docs and repository hygiene
         run: npm run validate:repo
+
+      - name: Validate Docker and Compose metadata
+        run: |
+          npm run validate:docker
+          docker compose -f docker-compose.example.yml config

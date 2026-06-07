@@ -64,6 +64,7 @@ npm run smoke:http
 npm run smoke:stdio
 npm run validate:docker
 npm pack --dry-run --json
+npm publish --dry-run --access public
 docker compose -f docker-compose.example.yml config
 ```
 
@@ -78,7 +79,32 @@ npm run smoke:memos
 Release metadata:
 
 - npm package name is `@charyeahowo/memos-mcp`; the CLI binary remains `memos-mcp`.
-- Use semver tags such as `v0.1.0`.
+- The unscoped npm package name `memos-mcp` is already occupied, so do not publish or document unscoped npm install commands for this project.
+- Confirm the scoped package is still unpublished or at the expected version:
+
+```bash
+npm view @charyeahowo/memos-mcp version --registry=https://registry.npmjs.org
+```
+
+- Use semver git tags such as `v0.1.0`; the Docker workflow publishes GHCR semver tags from `v*.*.*`.
 - Confirm GitHub Actions CI is green on the release commit.
-- Confirm GHCR image tags are available after the tag workflow completes.
-- Release notes should cover user-facing tool changes, deployment changes, compatibility notes, and known limitations.
+- After pushing the tag, confirm GHCR image tags are available:
+
+```bash
+docker manifest inspect ghcr.io/charyeahowo/memos-mcp:0.1.0
+docker manifest inspect ghcr.io/charyeahowo/memos-mcp:0.1
+```
+
+- If publishing npm manually, use:
+
+```bash
+npm publish --access public --provenance
+```
+
+Release notes should include:
+
+- Tool surface changes, including semantic-by-default `memos_search`, read/write tool visibility, and update/archive feature flags.
+- Transport validation for stdio and Streamable HTTP.
+- Docker/GHCR image tag and Compose health check notes.
+- Memos v0.24+ compatibility notes and any real `smoke:memos` result.
+- Known limitations, especially that the local JSON vector index is a single-user lightweight cache.
