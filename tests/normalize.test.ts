@@ -44,6 +44,25 @@ describe("normalizeMemo", () => {
     expect(memo.resources?.[0]?.name).toBe("resources/9");
   });
 
+  it("resources 为空数组时继续回退到 attachments", () => {
+    const memo = normalizeMemo({
+      name: "memos/1",
+      resources: [],
+      attachments: [{ name: "resources/10", filename: "fallback.png" }],
+    });
+    expect(memo.resources?.[0]?.name).toBe("resources/10");
+  });
+
+  it("resources 和 attachments 不是数组时忽略附件字段", () => {
+    const raw = {
+      name: "memos/1",
+      resources: "bad-shape",
+      attachments: null,
+    } as unknown as Parameters<typeof normalizeMemo>[0];
+    const memo = normalizeMemo(raw);
+    expect(memo.resources).toBeUndefined();
+  });
+
   it("归一化 v0.24+ camelCase memo 完整字段", () => {
     const memo = normalizeMemo({
       name: "memos/42",
@@ -86,6 +105,47 @@ describe("normalizeMemo", () => {
         type: "application/pdf",
         size: 123,
         externalLink: "https://example.com/note.pdf",
+      },
+    ]);
+  });
+
+  it("归一化旧字段和空字段混合的 memo fixture", () => {
+    const memo = normalizeMemo({
+      id: 7,
+      content: undefined,
+      visibility: "PRIVATE",
+      rowStatus: "ARCHIVED",
+      tags: ["legacy"],
+      create_time: "1717495200",
+      updatedTs: 1717498800000,
+      attachments: [
+        {
+          uid: "resources/legacy",
+          filename: "legacy.txt",
+          size: "42",
+          external_link: "https://example.com/legacy.txt",
+        },
+      ],
+    });
+
+    expect(memo).toEqual(
+      expect.objectContaining({
+        id: "7",
+        name: "memos/7",
+        content: "",
+        visibility: "PRIVATE",
+        state: "ARCHIVED",
+        tags: ["legacy"],
+        createdAt: new Date(1717495200 * 1000).toISOString(),
+        updatedAt: new Date(1717498800000).toISOString(),
+      })
+    );
+    expect(memo.resources).toEqual([
+      {
+        name: "resources/legacy",
+        filename: "legacy.txt",
+        size: "42",
+        externalLink: "https://example.com/legacy.txt",
       },
     ]);
   });

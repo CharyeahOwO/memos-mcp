@@ -9,6 +9,7 @@ import { EmbeddingClient } from "./embeddings.js";
 const INDEX_VERSION = 2;
 
 interface IndexCacheEntry {
+  ctimeMs: number;
   mtimeMs: number;
   size: number;
   file: SemanticIndexFile;
@@ -52,6 +53,12 @@ export interface IndexMaintenanceResult {
 }
 
 const syncLocks = new Map<string, Promise<Record<string, unknown>>>();
+
+interface SyncParams {
+  pageSize?: number;
+  maxPages?: number;
+  force?: boolean;
+}
 
 export class SemanticIndexService {
   private readonly config: AppConfig;
@@ -135,7 +142,7 @@ export class SemanticIndexService {
 
   async syncLocked(
     client: MemosClient,
-    params: { pageSize?: number; maxPages?: number } = {}
+    params: SyncParams = {}
   ): Promise<Record<string, unknown>> {
     const existing = syncLocks.get(this.config.indexDb);
     if (existing) return existing;
@@ -149,10 +156,11 @@ export class SemanticIndexService {
 
   async sync(
     client: MemosClient,
-    params: { pageSize?: number; maxPages?: number } = {}
+    params: SyncParams = {}
   ): Promise<Record<string, unknown>> {
     const previousFile = await this.readIndex();
-    const reusableMemos = this.reusableMemoMap(previousFile);
+    const force = params.force === true;
+    const reusableMemos = force ? new Map<string, SemanticIndexMemo>() : this.reusableMemoMap(previousFile);
     const embeddingClient = new EmbeddingClient(this.config);
     const embedded: SemanticIndexMemo[] = [];
     const pending: NormalizedMemo[] = [];
@@ -223,6 +231,7 @@ export class SemanticIndexService {
       indexPath: this.config.indexDb,
       updatedAt: now,
       dimensions: file.dimensions,
+      force,
     };
   }
 
@@ -232,7 +241,7 @@ export class SemanticIndexService {
   ): Promise<SemanticSearchResult[]> {
     const file = await this.readIndex();
     if (!file || file.memos.length === 0) {
-      throw new MemosApiError("语义索引为空，请先调用 memos_sync_index");
+      throw new MemosApiError("语义索引没有可搜索的 memo；如果 Memos 不为空，请先调用 memos_sync_index");
     }
 
     this.assertCompatibleIndex(file);
@@ -240,7 +249,9 @@ export class SemanticIndexService {
     const [queryEmbedding] = await embeddingClient.embed([query]);
     if (!queryEmbedding) throw new MemosApiError("查询 embedding 失败");
     if (queryEmbedding.length !== file.dimensions) {
-      throw new MemosApiError("查询 embedding 维度与语义索引不一致，请重新同步索引");
+      throw new MemosApiError(
+        '查询 embedding 维度与语义索引不一致，请调用 memos_sync_index 并传入 {"force": true} 重建索引'
+      );
     }
 
     const minScore = params.minScore ?? -1;
@@ -336,7 +347,12 @@ export class SemanticIndexService {
     }
 
     const cached = indexCache.get(this.config.indexDb);
-    if (cached && cached.mtimeMs === stats.mtimeMs && cached.size === stats.size) {
+    if (
+      cached &&
+      cached.ctimeMs === stats.ctimeMs &&
+      cached.mtimeMs === stats.mtimeMs &&
+      cached.size === stats.size
+    ) {
       return cached.file;
     }
 
@@ -350,7 +366,17 @@ export class SemanticIndexService {
     if (!Array.isArray(parsed.memos)) {
       throw new MemosApiError("语义索引文件格式不正确");
     }
+    for (const memo of parsed.memos) {
+      const embedding = memo?.embedding;
+      if (
+        !Array.isArray(embedding) ||
+        embedding.some((value) => typeof value !== "number" || !Number.isFinite(value))
+      ) {
+        throw new MemosApiError("语义索引文件格式不正确：memo embedding 必须是数字数组");
+      }
+    }
     indexCache.set(this.config.indexDb, {
+      ctimeMs: stats.ctimeMs,
       mtimeMs: stats.mtimeMs,
       size: stats.size,
       file: parsed,
@@ -365,6 +391,7 @@ export class SemanticIndexService {
     await rename(tempPath, this.config.indexDb);
     const stats = await stat(this.config.indexDb);
     indexCache.set(this.config.indexDb, {
+      ctimeMs: stats.ctimeMs,
       mtimeMs: stats.mtimeMs,
       size: stats.size,
       file,

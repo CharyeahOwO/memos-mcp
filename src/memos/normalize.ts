@@ -84,8 +84,12 @@ function normalizeResource(raw: RawResource): NormalizedResource {
 }
 
 function normalizeResources(memo: RawMemo): NormalizedResource[] | undefined {
-  const list = memo.resources ?? memo.attachments;
-  if (!list || list.length === 0) return undefined;
+  const list = Array.isArray(memo.resources) && memo.resources.length > 0
+    ? memo.resources
+    : Array.isArray(memo.attachments) && memo.attachments.length > 0
+      ? memo.attachments
+      : undefined;
+  if (!list) return undefined;
   return list.map(normalizeResource);
 }
 

@@ -100,9 +100,10 @@ export class MemosClient {
       );
     }
 
-    // 某些端点可能返回空 body
     const text = await safeReadText(response);
-    if (!text) return {} as T;
+    if (!text) {
+      throw new MemosApiError("Memos API 返回空响应，预期为 JSON");
+    }
     try {
       return JSON.parse(text) as T;
     } catch {
@@ -217,7 +218,7 @@ export class MemosClient {
   /** 关键词搜索：走 CEL content_search */
   async searchMemos(
     query: string,
-    params: { pageSize?: number } = {}
+    params: { pageSize?: number; pageToken?: string; state?: string } = {}
   ): Promise<NormalizedMemoPage> {
     // CEL filter：当前 Memos 版本（v0.24+）使用方法式语法 content.contains("...")。
     // 旧版本（<=v0.22）曾用 content_search == [...]，已不再适用。
@@ -225,6 +226,8 @@ export class MemosClient {
     return this.listMemos({
       filter,
       pageSize: params.pageSize,
+      pageToken: params.pageToken,
+      state: params.state,
       orderBy: "create_time desc",
     });
   }

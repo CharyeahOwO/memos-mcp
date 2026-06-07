@@ -442,6 +442,7 @@ openclaw mcp set memos '{"url":"http://127.0.0.1:8080/mcp","transport":"streamab
 | Startup fails with embedding config errors | Set `MEMOS_MCP_EMBEDDING_BASE_URL` and `MEMOS_MCP_EMBEDDING_MODEL`. |
 | HTTP client gets auth errors | Send `Authorization: Bearer <Memos token>` with each MCP request. |
 | `memos_search` says the index is empty | Check embedding config and auth; default behavior is to sync automatically before search. |
+| Search says embedding dimensions do not match | Run `memos_sync_index` with `{"force": true}` after changing embedding backends or model dimensions. |
 | Semantic search returns stale results | Check `MEMOS_MCP_INDEX_TTL_MINUTES` and `MEMOS_MCP_EXPIRED_INDEX_BEHAVIOR`, or run `memos_sync_index`. |
 | Docker index sync gets `EACCES` | Use the named volume or make the bind mount writable by UID/GID `10001:10001`. |
 | Date tools return unexpected days | Set `MEMOS_MCP_TIMEZONE`, for example `Asia/Shanghai`. |

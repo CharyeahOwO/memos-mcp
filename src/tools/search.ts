@@ -13,6 +13,7 @@ const inputSchema = {
     .max(200)
     .optional()
     .describe("关键词模式返回多少条，默认 20，最大 200"),
+  pageToken: z.string().optional().describe("关键词模式翻页用的 token（来自上一次返回）"),
   limit: z
     .number()
     .int()
@@ -76,8 +77,10 @@ export function createSearchTool(deps: ToolDeps): ToolDefinition {
         }
 
         const pageSize = typeof args.pageSize === "number" ? args.pageSize : 20;
+        const pageToken =
+          typeof args.pageToken === "string" ? args.pageToken : undefined;
         const client = deps.authResolver.resolveClient(extra);
-        const page = await client.searchMemos(query, { pageSize });
+        const page = await client.searchMemos(query, { pageSize, pageToken });
         return ok({
           query,
           mode: "keyword",

@@ -19,6 +19,10 @@ const pageControlsSchema = {
     .max(200)
     .optional()
     .describe("最多扫描页数，默认 20，最大 200"),
+  force: z
+    .boolean()
+    .optional()
+    .describe("是否强制重建所有 embedding；当 embedding 维度变化但 provider/model 名称不变时使用"),
 } satisfies z.ZodRawShape;
 
 export function createSyncIndexTool(deps: ToolDeps): ToolDefinition {
@@ -34,9 +38,10 @@ export function createSyncIndexTool(deps: ToolDeps): ToolDefinition {
       try {
         const pageSize = typeof args.pageSize === "number" ? args.pageSize : 100;
         const maxPages = typeof args.maxPages === "number" ? args.maxPages : 20;
+        const force = args.force === true;
         const client = deps.authResolver.resolveClient(extra);
         const service = new SemanticIndexService(deps.config);
-        const result = await service.syncLocked(client, { pageSize, maxPages });
+        const result = await service.syncLocked(client, { pageSize, maxPages, force });
         return ok(result);
       } catch (error) {
         return fail(errorMessage(error));

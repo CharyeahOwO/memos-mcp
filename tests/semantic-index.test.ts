@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
@@ -160,6 +160,38 @@ describe("semantic index", () => {
       expect(sync.indexed).toBe(2);
       expect(sync.embedded).toBe(0);
       expect(sync.reused).toBe(2);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("空 Memos 同步不会调用 embedding 且返回空索引状态", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new Error("embedding should not be called for an empty memo page"));
+    const { deps, cleanup } = await makeDeps({ page: { memos: [] } });
+    try {
+      const service = new SemanticIndexService(deps.config);
+      const sync = await service.sync(deps.authResolver.resolveClient({}));
+      expect(sync).toEqual(
+        expect.objectContaining({
+          indexed: 0,
+          scanned: 0,
+          embedded: 0,
+          reused: 0,
+          dimensions: 0,
+        })
+      );
+      const status = await service.status();
+      expect(status).toEqual(
+        expect.objectContaining({
+          ready: true,
+          memoCount: 0,
+          dimensions: 0,
+        })
+      );
+      await expect(service.search("anything")).rejects.toThrow("没有可搜索的 memo");
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {
       await cleanup();
@@ -330,6 +362,32 @@ describe("semantic index", () => {
     }
   });
 
+  it("读取可解析但缺少 embedding 的损坏索引时返回可读错误", async () => {
+    const { deps, cleanup } = await makeDeps();
+    try {
+      await writeIndex(deps.config.indexDb, {
+        memos: [{ ...semanticMemos[0], embedding: undefined }],
+      });
+      const service = new SemanticIndexService(deps.config);
+      await expect(service.status()).rejects.toThrow("memo embedding");
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("读取包含非数字 embedding 的损坏索引时返回可读错误", async () => {
+    const { deps, cleanup } = await makeDeps();
+    try {
+      await writeIndex(deps.config.indexDb, {
+        memos: [{ ...semanticMemos[0], embedding: [1, Number.NaN, 0] }],
+      });
+      const service = new SemanticIndexService(deps.config);
+      await expect(service.status()).rejects.toThrow("memo embedding");
+    } finally {
+      await cleanup();
+    }
+  });
+
   it("搜索时拒绝查询 embedding 与索引维度不一致", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
@@ -344,6 +402,40 @@ describe("semantic index", () => {
       await writeIndex(deps.config.indexDb);
       const service = new SemanticIndexService(deps.config);
       await expect(service.search("kitten memory")).rejects.toThrow("查询 embedding 维度");
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("force sync 在 provider/model 未变但维度变化时重建 embedding", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: [{ index: 0, embedding: [1, 0] }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+    const { deps, cleanup } = await makeDeps({
+      page: { memos: [semanticMemos[0] as NormalizedMemo] },
+    });
+    try {
+      await writeIndex(deps.config.indexDb, {
+        dimensions: 3,
+        memos: [{ ...semanticMemos[0], embedding: [1, 0, 0] }],
+      });
+      const service = new SemanticIndexService(deps.config);
+      const sync = await service.sync(deps.authResolver.resolveClient({}), { force: true });
+      expect(sync).toEqual(
+        expect.objectContaining({
+          embedded: 1,
+          reused: 0,
+          dimensions: 2,
+          force: true,
+        })
+      );
+      const status = await service.status();
+      expect(status.dimensions).toBe(2);
     } finally {
       await cleanup();
     }
@@ -381,6 +473,63 @@ describe("semantic index", () => {
       await expect(service.sync(deps.authResolver.resolveClient({}))).rejects.toThrow(
         "空 embedding"
       );
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("Embedding API 返回部分 batch 时返回可读错误", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: [{ index: 0, embedding: [1, 0, 0] }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+    const { deps, cleanup } = await makeDeps();
+    try {
+      const service = new SemanticIndexService(deps.config);
+      await expect(service.sync(deps.authResolver.resolveClient({}))).rejects.toThrow(
+        "数据条数与请求不一致"
+      );
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("后续 embedding batch 失败时保留上一版索引文件", async () => {
+    let calls = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      calls += 1;
+      if (calls === 1) {
+        return new Response(
+          JSON.stringify({
+            data: [{ index: 0, embedding: [1, 0, 0] }],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      return new Response(JSON.stringify({ data: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    const { deps, cleanup } = await makeDeps({
+      env: { MEMOS_MCP_EMBEDDING_BATCH_SIZE: "1" },
+    });
+    try {
+      await writeIndex(deps.config.indexDb, {
+        updatedAt: "2026-06-01T00:00:00.000Z",
+      });
+      const service = new SemanticIndexService(deps.config);
+      await expect(
+        service.sync(deps.authResolver.resolveClient({}), { force: true })
+      ).rejects.toThrow("数据条数与请求不一致");
+      const persisted = JSON.parse(await readFile(deps.config.indexDb, "utf8")) as {
+        updatedAt?: string;
+      };
+      expect(persisted.updatedAt).toBe("2026-06-01T00:00:00.000Z");
     } finally {
       await cleanup();
     }
@@ -426,6 +575,50 @@ describe("semantic index", () => {
       expect(first).toEqual({ indexed: 2 });
       expect(second).toEqual({ indexed: 2 });
       expect(syncSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("syncLocked 失败后清理锁并允许后续重试", async () => {
+    const { deps, cleanup } = await makeDeps();
+    try {
+      const service = new SemanticIndexService(deps.config);
+      const syncSpy = vi
+        .spyOn(service, "sync")
+        .mockRejectedValueOnce(new Error("sync failed"))
+        .mockResolvedValueOnce({ indexed: 2 });
+
+      const client = deps.authResolver.resolveClient({});
+      const first = service.syncLocked(client);
+      const second = service.syncLocked(client);
+
+      await expect(first).rejects.toThrow("sync failed");
+      await expect(second).rejects.toThrow("sync failed");
+      expect(syncSpy).toHaveBeenCalledTimes(1);
+
+      await expect(service.syncLocked(client)).resolves.toEqual({ indexed: 2 });
+      expect(syncSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("JSON index cache 在 mtime 和 size 相同但 ctime 变化时重新读取文件", async () => {
+    const { deps, cleanup } = await makeDeps();
+    try {
+      await writeIndex(deps.config.indexDb);
+      const service = new SemanticIndexService(deps.config);
+      expect((await service.status()).updatedAt).toBe("2026-06-07T00:00:00.000Z");
+
+      const before = await stat(deps.config.indexDb);
+      const original = await readFile(deps.config.indexDb, "utf8");
+      const changed = original.replaceAll("2026-06-07", "2026-06-08");
+      expect(Buffer.byteLength(changed)).toBe(Buffer.byteLength(original));
+      await writeFile(deps.config.indexDb, changed, "utf8");
+      await utimes(deps.config.indexDb, before.atime, before.mtime);
+
+      expect((await service.status()).updatedAt).toBe("2026-06-08T00:00:00.000Z");
     } finally {
       await cleanup();
     }

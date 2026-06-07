@@ -65,7 +65,13 @@ Response:
 - `memos_index_status`: inspect readiness, count, dimensions, model, and path.
 - `memos_search`: semantic search by default, keyword search with `mode: "keyword"`.
 
-`memos_sync_index` reuses existing embeddings when the memo content and tags have not changed. It returns `embedded`, `reused`, and `pages` so clients can see whether a sync was mostly incremental.
+`memos_sync_index` reuses existing embeddings when the memo content and tags have not changed. It returns `embedded`, `reused`, `pages`, and `force` so clients can see whether a sync was mostly incremental. If an embedding endpoint changes vector dimensions without changing the configured provider or model name, rebuild all vectors with:
+
+```json
+{
+  "force": true
+}
+```
 
 `memos_search` checks index freshness before semantic search. If the index is missing or expired and `MEMOS_MCP_EXPIRED_INDEX_BEHAVIOR=sync`, it runs an incremental sync first. `MEMOS_MCP_INDEX_TTL_MINUTES=0` disables expiration.
 
@@ -80,6 +86,6 @@ In Docker, the process runs as UID/GID `10001:10001`, and the image creates `/da
 ## Current Limits
 
 - The current backend is a local JSON vector index for simple single-user deployments.
-- JSON index reads are cached by file mtime/size to avoid repeated parse work during normal search.
+- JSON index reads are cached by file ctime/mtime/size to avoid repeated parse work during normal search while still noticing same-size rewrites.
 - SQLite/FTS5 and larger vector storage can replace the JSON store later without changing the MCP tool surface.
 - In-process local embedding models are not bundled; use an OpenAI-compatible endpoint.

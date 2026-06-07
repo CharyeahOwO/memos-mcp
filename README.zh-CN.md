@@ -442,6 +442,7 @@ openclaw mcp set memos '{"url":"http://127.0.0.1:8080/mcp","transport":"streamab
 | 启动时报 embedding 配置错误 | 设置 `MEMOS_MCP_EMBEDDING_BASE_URL` 和 `MEMOS_MCP_EMBEDDING_MODEL`。 |
 | HTTP 客户端鉴权失败 | 每次 MCP 请求都发送 `Authorization: Bearer <Memos token>`。 |
 | `memos_search` 提示索引为空 | 检查 embedding 配置和鉴权；默认会在搜索前自动同步。 |
+| 搜索提示 embedding 维度不一致 | 更换 embedding backend 或模型维度后，调用 `memos_sync_index` 并传 `{"force": true}` 重建索引。 |
 | 语义搜索结果过旧 | 检查 `MEMOS_MCP_INDEX_TTL_MINUTES` 和 `MEMOS_MCP_EXPIRED_INDEX_BEHAVIOR`，或手动运行 `memos_sync_index`。 |
 | Docker 同步索引时报 `EACCES` | 使用 named volume，或让 bind mount 目录可被 UID/GID `10001:10001` 写入。 |
 | 日期工具结果不符合预期 | 设置 `MEMOS_MCP_TIMEZONE`，例如 `Asia/Shanghai`。 |
