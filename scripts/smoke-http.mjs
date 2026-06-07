@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
-const port = process.env.MEMOS_MCP_SMOKE_PORT ?? "18080";
+const basePort = Number(process.env.MEMOS_MCP_SMOKE_PORT ?? "18080");
 const timeoutMs = Number(process.env.MEMOS_MCP_SMOKE_TIMEOUT_MS ?? "10000");
 const smokeToken = "memos_pat_smoke";
 
@@ -61,26 +61,39 @@ function toolNames(result) {
   return result.tools.map((tool) => tool.name).sort();
 }
 
-function assertDefaultTools(names) {
-  for (const name of [
-    "memos_create",
-    "memos_index_status",
-    "memos_list",
-    "memos_search",
-    "memos_sync_index",
-    "resources_list",
-    "tags_list",
-  ]) {
-    if (!names.includes(name)) {
-      fail(`tools/list is missing ${name}`);
-    }
-  }
-  if (names.includes("memos_update") || names.includes("memos_archive")) {
-    fail("update/archive tools must stay hidden by default");
+const DEFAULT_TOOLS = [
+  "memos_create",
+  "memos_get",
+  "memos_get_by_tag",
+  "memos_get_day",
+  "memos_get_range",
+  "memos_index_status",
+  "memos_list",
+  "memos_on_this_day",
+  "memos_search",
+  "memos_sync_index",
+  "resources_list",
+  "tags_list",
+].sort();
+
+const READONLY_TOOLS = DEFAULT_TOOLS.filter((name) => name !== "memos_create");
+
+const UPDATE_ENABLED_TOOLS = [
+  ...DEFAULT_TOOLS,
+  "memos_archive",
+  "memos_update",
+].sort();
+
+function assertToolSet(names, expected, label) {
+  const actual = [...names].sort();
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    fail(
+      `${label} tools/list mismatch:\nexpected ${expected.join(", ")}\nactual   ${actual.join(", ")}`
+    );
   }
 }
 
-async function connectHttpClient(headers) {
+async function connectHttpClient(port, headers) {
   const client = new Client({ name: "memos-mcp-http-smoke", version: "0.1.0" });
   const transport = new StreamableHTTPClientTransport(
     new URL(`http://127.0.0.1:${port}/mcp`),
@@ -96,34 +109,34 @@ async function connectHttpClient(headers) {
   return client;
 }
 
-const fakeMemos = await startFakeMemos();
-const child = spawn(process.execPath, ["dist/index.js"], {
-  env: {
-    ...process.env,
-    MEMOS_BASE_URL: fakeMemos.baseUrl,
-    MEMOS_ACCESS_TOKEN: "",
-    MEMOS_MCP_TRANSPORT: "http",
-    MEMOS_MCP_HOST: "127.0.0.1",
-    MEMOS_MCP_PORT: port,
-    MEMOS_MCP_SYNC_ON_START: "false",
-    MEMOS_MCP_SYNC_INTERVAL_MINUTES: "0",
-    MEMOS_MCP_EMBEDDING_PROVIDER: process.env.MEMOS_MCP_EMBEDDING_PROVIDER ?? "openai-compatible",
-    MEMOS_MCP_EMBEDDING_BASE_URL:
-      process.env.MEMOS_MCP_EMBEDDING_BASE_URL ?? "http://127.0.0.1:11434/v1",
-    MEMOS_MCP_EMBEDDING_MODEL: process.env.MEMOS_MCP_EMBEDDING_MODEL ?? "smoke-embedding",
-  },
-  stdio: ["ignore", "pipe", "pipe"],
-});
+async function startHttpServer(fakeMemos, port, extraEnv = {}) {
+  const child = spawn(process.execPath, ["dist/index.js"], {
+    env: {
+      ...process.env,
+      MEMOS_BASE_URL: fakeMemos.baseUrl,
+      MEMOS_ACCESS_TOKEN: "",
+      MEMOS_MCP_TRANSPORT: "http",
+      MEMOS_MCP_HOST: "127.0.0.1",
+      MEMOS_MCP_PORT: String(port),
+      MEMOS_MCP_SYNC_ON_START: "false",
+      MEMOS_MCP_SYNC_INTERVAL_MINUTES: "0",
+      MEMOS_MCP_EMBEDDING_PROVIDER: process.env.MEMOS_MCP_EMBEDDING_PROVIDER ?? "openai-compatible",
+      MEMOS_MCP_EMBEDDING_BASE_URL:
+        process.env.MEMOS_MCP_EMBEDDING_BASE_URL ?? "http://127.0.0.1:11434/v1",
+      MEMOS_MCP_EMBEDDING_MODEL: process.env.MEMOS_MCP_EMBEDDING_MODEL ?? "smoke-embedding",
+      ...extraEnv,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
 
-let stderr = "";
-child.stderr.on("data", (chunk) => {
-  stderr += String(chunk);
-});
+  let stderr = "";
+  child.stderr.on("data", (chunk) => {
+    stderr += String(chunk);
+  });
 
-const startedAt = Date.now();
-let lastError;
+  const startedAt = Date.now();
+  let lastError;
 
-try {
   while (Date.now() - startedAt < timeoutMs) {
     if (child.exitCode !== null) {
       throw new Error(`server exited early with code ${child.exitCode}: ${stderr.trim()}`);
@@ -133,9 +146,7 @@ try {
       if (response.ok) {
         const body = await response.json();
         if (body?.ok === true) {
-          console.log(`HTTP smoke test passed on port ${port}`);
-          process.exitCode = 0;
-          break;
+          return child;
         }
       }
     } catch (error) {
@@ -144,20 +155,30 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
 
-  if (process.exitCode !== 0) {
-    const reason = lastError instanceof Error ? lastError.message : String(lastError ?? "timeout");
-    throw new Error(`HTTP smoke test timed out: ${reason}\n${stderr.trim()}`);
-  }
+  child.kill();
+  const reason = lastError instanceof Error ? lastError.message : String(lastError ?? "timeout");
+  throw new Error(`HTTP smoke test timed out on port ${port}: ${reason}\n${stderr.trim()}`);
+}
 
+async function withHttpServer(fakeMemos, port, extraEnv, callback) {
+  const child = await startHttpServer(fakeMemos, port, extraEnv);
+  try {
+    await callback();
+  } finally {
+    child.kill();
+  }
+}
+
+async function runDefaultScenario(fakeMemos, port) {
   const getMcp = await fetch(`http://127.0.0.1:${port}/mcp`);
   if (getMcp.status !== 405) {
     fail(`GET /mcp should return 405, got ${getMcp.status}`);
   }
 
-  const unauthenticated = await connectHttpClient();
+  const unauthenticated = await connectHttpClient(port);
   try {
     const names = toolNames(await unauthenticated.listTools());
-    assertDefaultTools(names);
+    assertToolSet(names, DEFAULT_TOOLS, "HTTP default unauthenticated");
     const result = await unauthenticated.callTool({
       name: "memos_list",
       arguments: { pageSize: 1 },
@@ -170,12 +191,12 @@ try {
     await unauthenticated.close();
   }
 
-  const authenticated = await connectHttpClient({
+  const authenticated = await connectHttpClient(port, {
     Authorization: `Bearer ${smokeToken}`,
   });
   try {
     const names = toolNames(await authenticated.listTools());
-    assertDefaultTools(names);
+    assertToolSet(names, DEFAULT_TOOLS, "HTTP default authenticated");
     const result = await authenticated.callTool({
       name: "memos_list",
       arguments: { pageSize: 1 },
@@ -193,9 +214,44 @@ try {
   } finally {
     await authenticated.close();
   }
+}
 
-  console.log(`HTTP MCP smoke test passed on port ${port}`);
+async function runToolSetScenario(port, expectedTools, label) {
+  const client = await connectHttpClient(port);
+  try {
+    assertToolSet(toolNames(await client.listTools()), expectedTools, label);
+  } finally {
+    await client.close();
+  }
+}
+
+if (!Number.isInteger(basePort) || basePort < 1 || basePort > 65533) {
+  fail("MEMOS_MCP_SMOKE_PORT must be an integer between 1 and 65533");
+}
+
+const fakeMemos = await startFakeMemos();
+
+try {
+  await withHttpServer(fakeMemos, basePort, {}, async () => {
+    await runDefaultScenario(fakeMemos, basePort);
+  });
+
+  await withHttpServer(fakeMemos, basePort + 1, { MEMOS_MCP_READONLY: "true" }, async () => {
+    await runToolSetScenario(basePort + 1, READONLY_TOOLS, "HTTP readonly");
+  });
+
+  await withHttpServer(
+    fakeMemos,
+    basePort + 2,
+    { MEMOS_MCP_ENABLE_UPDATE_TOOLS: "true" },
+    async () => {
+      await runToolSetScenario(basePort + 2, UPDATE_ENABLED_TOOLS, "HTTP update-enabled");
+    }
+  );
+
+  console.log(
+    `HTTP MCP smoke test passed on ports ${basePort}, ${basePort + 1}, and ${basePort + 2}`
+  );
 } finally {
-  child.kill();
   await fakeMemos.close();
 }

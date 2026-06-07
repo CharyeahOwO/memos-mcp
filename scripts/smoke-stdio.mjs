@@ -52,22 +52,27 @@ async function startFakeMemos() {
   };
 }
 
-function assertDefaultTools(names) {
-  for (const name of [
-    "memos_create",
-    "memos_index_status",
-    "memos_list",
-    "memos_search",
-    "memos_sync_index",
-    "resources_list",
-    "tags_list",
-  ]) {
-    if (!names.includes(name)) {
-      fail(`tools/list is missing ${name}`);
-    }
-  }
-  if (names.includes("memos_update") || names.includes("memos_archive")) {
-    fail("update/archive tools must stay hidden by default");
+const DEFAULT_TOOLS = [
+  "memos_create",
+  "memos_get",
+  "memos_get_by_tag",
+  "memos_get_day",
+  "memos_get_range",
+  "memos_index_status",
+  "memos_list",
+  "memos_on_this_day",
+  "memos_search",
+  "memos_sync_index",
+  "resources_list",
+  "tags_list",
+].sort();
+
+function assertToolSet(names, expected, label) {
+  const actual = [...names].sort();
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    fail(
+      `${label} tools/list mismatch:\nexpected ${expected.join(", ")}\nactual   ${actual.join(", ")}`
+    );
   }
 }
 
@@ -99,7 +104,7 @@ const client = new Client({ name: "memos-mcp-stdio-smoke", version: "0.1.0" });
 try {
   await client.connect(transport);
   const tools = await client.listTools();
-  assertDefaultTools(tools.tools.map((tool) => tool.name));
+  assertToolSet(tools.tools.map((tool) => tool.name), DEFAULT_TOOLS, "stdio default");
 
   const result = await client.callTool({
     name: "memos_list",
