@@ -9,6 +9,19 @@ Memos-mcp 为 Memos 增加全文搜索、向量索引、语义检索和 MCP 工�
 
 memos-mcp 是一个轻量级的 Memos 语义检索层。它会把 Memos 内容同步到本地向量索引，提供关键词搜索和语义搜索，并通过 MCP 暴露给 AI Agent 使用，让你的个人记录可以被安全、可控地检索和调用。
 
+## 安装
+
+### 给人类看的
+
+复制并粘贴以下提示词到你的 LLM Agent（Claude Code、Codex CLI、Cursor、AmpCode 等）：
+
+```text
+Install and configure memos-mcp by following the instructions here:
+https://raw.githubusercontent.com/CharyeahOwO/memos-mcp/refs/heads/main/AGENTS.md
+```
+
+或者你也可以直接去读 [Agent 部署文档](./AGENTS.md)，但说真的，让 Agent 去干吧。手动部署说明在下面。
+
 ## 能力
 
 | 能力 | 说明 |
@@ -470,6 +483,7 @@ npm run smoke:memos
 
 ## 更多文档
 
+- [Agent Runbook](./AGENTS.md)
 - [Architecture](./docs/architecture.md)
 - [Deployment](./docs/deployment.md)
 - [Development](./docs/development.md)

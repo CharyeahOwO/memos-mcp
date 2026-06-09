@@ -9,6 +9,19 @@ Turn Memos into a searchable long-term memory layer for AI agents.
 
 memos-mcp is a lightweight semantic retrieval layer for [Memos](https://github.com/usememos/memos). It syncs memo content into a local vector index, provides keyword search and semantic search, and exposes the results through MCP tools.
 
+## Install
+
+### For Humans
+
+Copy and paste this prompt into your LLM agent, such as Claude Code, Codex CLI, Cursor, or AmpCode:
+
+```text
+Install and configure memos-mcp by following the instructions here:
+https://raw.githubusercontent.com/CharyeahOwO/memos-mcp/refs/heads/main/AGENTS.md
+```
+
+Or read the [agent deployment runbook](./AGENTS.md) yourself, but really, let your agent handle it. Manual deployment instructions remain below.
+
 ## Features
 
 | Capability | Description |
@@ -470,6 +483,7 @@ npm run smoke:memos
 
 ## More Docs
 
+- [Agent Runbook](./AGENTS.md)
 - [Architecture](./docs/architecture.md)
 - [Deployment](./docs/deployment.md)
 - [Development](./docs/development.md)
